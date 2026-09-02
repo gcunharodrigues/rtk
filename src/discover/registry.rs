@@ -1495,6 +1495,7 @@ fn rewrite_segment_inner(
         }
         None => cmd_part,
     };
+    let strip_target = python_tool_form(strip_target, rule.rtk_cmd).unwrap_or(strip_target);
 
     // Try each rewrite prefix (longest first) with word-boundary check
     for &prefix in rule.rewrite_prefixes {
@@ -1550,12 +1551,34 @@ fn php_tool_form(cmd: &str, rtk_cmd: &str) -> Option<String> {
     Some(normalize_php_tool_command(unwrapped))
 }
 
+/// Canonical `pytest ...` form for versioned `python -m pytest` invocations.
+fn python_tool_form<'a>(cmd: &'a str, rtk_cmd: &str) -> Option<&'a str> {
+    if rtk_cmd != "rtk pytest" {
+        return None;
+    }
+    let split = cmd.find(char::is_whitespace)?;
+    let (python, rest) = cmd.split_at(split);
+    let version = python.strip_prefix("python")?;
+    if !version.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        return None;
+    }
+    let rest = rest.trim_start().strip_prefix("-m")?;
+    if !rest.as_bytes().first().is_some_and(u8::is_ascii_whitespace) {
+        return None;
+    }
+    let module = rest.trim_start();
+    strip_word_prefix(module, "pytest").map(|_| module)
+}
+
 fn tool_form(cmd_clean: &str, rtk_equivalent: &str) -> String {
     // Same normalization the rewrite path applies, so the exclusion sees the tool
     // whichever way it was spelled — including `php vendor/bin/phpunit`.
     let normalized = strip_absolute_path(
         &php_tool_form(cmd_clean, rtk_equivalent).unwrap_or_else(|| cmd_clean.to_string()),
     );
+    let normalized = python_tool_form(&normalized, rtk_equivalent)
+        .unwrap_or(&normalized)
+        .to_string();
     RULES
         .iter()
         .find(|r| r.rtk_cmd == rtk_equivalent)
@@ -6022,6 +6045,26 @@ mod tests {
             rewrite_command_no_prefixes("php run-tests.php", &[]),
             Some("rtk phpt".into())
         );
+    }
+
+    #[test]
+    fn test_rewrite_supported_alternate_forms() {
+        for (command, expected) in [
+            ("npm exec lint --fix", "rtk lint --fix"),
+            ("npm x lint .", "rtk lint ."),
+            ("pnpm dlx lint .", "rtk lint ."),
+            ("pnpm exec lint .", "rtk lint ."),
+            ("python3.12 -m pytest tests/", "rtk pytest tests/"),
+            ("bin/rake test test/models", "rtk rake test test/models"),
+            ("bundle exec bin/rake test", "rtk rake test"),
+            ("bundle exec bin/rails test", "rtk rake test"),
+        ] {
+            assert_eq!(
+                rewrite_command(command, &[], &[]),
+                Some(expected.into()),
+                "failed for {command:?}"
+            );
+        }
     }
 
     #[test]

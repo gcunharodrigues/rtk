@@ -1635,6 +1635,22 @@ mod tests {
     }
 
     #[test]
+    fn test_codex_rewrites_supported_alternate_forms() {
+        for (command, expected) in [
+            ("npm exec lint --fix", "rtk lint --fix"),
+            ("bin/rake test test/models", "rtk rake test test/models"),
+        ] {
+            let result = run_codex_inner(&codex_input("Bash", command))
+                .unwrap_or_else(|| panic!("expected Codex rewrite for {command:?}"));
+            let output: Value = serde_json::from_str(&result).unwrap();
+            assert_eq!(
+                output["hookSpecificOutput"]["updatedInput"]["command"], expected,
+                "failed for {command:?}"
+            );
+        }
+    }
+
+    #[test]
     fn test_codex_rewrite_preserves_input_and_permissions() {
         let result = run_codex_inner(&codex_input("Bash", "git status")).unwrap();
         let v: Value = serde_json::from_str(&result).unwrap();
