@@ -2559,6 +2559,10 @@ fn read_optional_file(path: &Path) -> Result<Option<Vec<u8>>> {
     }
 }
 
+/// Verify the source snapshot at final pre-write verification.
+///
+/// `hooks.json` has no cooperative lock or compare-and-swap, so a writer after
+/// this check is outside this guard.
 fn ensure_codex_snapshot_unchanged(path: &Path, snapshot: Option<&[u8]>) -> Result<()> {
     let current = read_optional_file(path)?;
     if current.as_deref() != snapshot {

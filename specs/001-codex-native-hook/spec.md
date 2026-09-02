@@ -29,7 +29,7 @@ A Codex user runs ordinary shell commands and receives RTK-compressed output wit
 
 A Codex user can install, inspect, and remove the integration without losing existing hooks or instructions.
 
-**Why this priority**: Global configuration must be reversible and preserve concurrent user configuration.
+**Why this priority**: Global configuration must be reversible and preserve the source observed through final pre-write verification.
 
 **Independent Test**: Exercise install, repeated install, show, dry-run, and uninstall against a temporary Codex home containing unrelated hooks.
 
@@ -57,7 +57,7 @@ A maintainer can determine whether the Codex integration saves meaningful shell-
 
 - Hook stdin exceeds 1 MiB, contains a BOM, invalid JSON, no command, or a non-shell tool.
 - Commands contain heredocs, substitutions, redirections, compound operators, explicit detail flags, or `RTK_DISABLED=1`.
-- Existing hook configuration is empty, malformed, duplicated, reordered, or changed concurrently.
+- Existing hook configuration is empty, malformed, duplicated, reordered, or changed before final pre-write verification.
 - RTK is absent or the hook process fails.
 
 ## Requirements *(mandatory)*
@@ -66,14 +66,14 @@ A maintainer can determine whether the Codex integration saves meaningful shell-
 
 - **FR-001**: The system MUST expose a Codex hook processor using the same supported-command registry as Claude.
 - **FR-002**: The processor MUST rewrite only Codex shell commands with non-empty textual command input.
-- **FR-003**: The processor MUST preserve Codex-native approval behavior and MUST NOT auto-approve rewritten commands.
+- **FR-003**: The processor MUST preserve Codex-native approval behavior, MUST NOT auto-approve rewritten commands, and MUST NOT emit `permissionDecision` fields.
 - **FR-004**: Unsupported or invalid inputs and internal failures MUST pass through without blocking execution.
-- **FR-005**: Global Codex initialization MUST merge the RTK hook after existing safety hooks, atomically and idempotently.
+- **FR-005**: Global Codex initialization MUST merge one final `PreToolUse` entry with matcher `Bash` and command `rtk hook codex`, atomically and idempotently.
 - **FR-006**: Hook-only initialization MUST avoid adding RTK instructions to the model context.
 - **FR-007**: Show and uninstall MUST identify or remove only RTK-owned configuration.
 - **FR-008**: Existing local Codex instruction-only initialization MUST remain compatible.
 - **FR-009**: The integration MUST document restart, hook trust, rollback, and passthrough behavior.
-- **FR-010**: A configuration write MUST abort without changing the target when the source file changes after it is read.
+- **FR-010**: A configuration write MUST abort without changing the target when final pre-write snapshot verification finds that the source differs. After that verification, it MUST atomically replace the target. An uncooperative writer after the check is outside this protection because `hooks.json` has no cooperative lock or compare-and-swap.
 
 ## Success Criteria *(mandatory)*
 

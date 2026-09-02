@@ -22,8 +22,12 @@ hook. `rtk init --codex` remains local instruction-only.
 
 ### Append one owned entry last
 
-Preserve unrelated hooks, remove RTK duplicates, append one canonical entry,
-back up existing config, and write atomically. Earlier safety hooks run first.
+Preserve unrelated hooks, remove RTK duplicates, append one canonical `Bash`
+entry running `rtk hook codex`, back up existing config, verify the read
+snapshot at final pre-write verification, and write atomically. Earlier safety
+hooks run first. `hooks.json` has no cooperative lock or
+compare-and-swap; an uncooperative writer after verification is outside this
+protection.
 
 ### Disposable acceptance
 

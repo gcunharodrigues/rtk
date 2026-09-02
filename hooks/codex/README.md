@@ -1,7 +1,8 @@
 # Codex CLI Hooks
 
 RTK can rewrite supported shell commands before Codex runs them. Codex keeps
-approval decisions; RTK only returns a replacement command.
+approval decisions; RTK only returns a replacement command and never emits
+`permissionDecision` fields.
 
 ## Install
 
@@ -55,5 +56,9 @@ Uninstall removes only exact `rtk hook codex` entries and RTK awareness it
 installed. Mixed user hook groups remain. Before a changed `hooks.json` is
 written, RTK saves `hooks.json.bak`; restore that backup manually if needed.
 
-Malformed JSON or a concurrent change aborts the configuration write without
-changing `hooks.json`. `--dry-run` reports changes without writing files.
+At final pre-write snapshot verification, RTK verifies that `hooks.json` still
+matches its read snapshot; a difference aborts the write without changing the
+target.
+`hooks.json` has no cooperative lock or compare-and-swap, so an uncooperative
+writer after that final check is outside this protection. `--dry-run` reports
+changes without writing files.

@@ -46,13 +46,16 @@ Post-design PASS: contract, data model, and quickstart preserve all principles.
   untracked `.agents/` copies existed.
 - Caller: `src/main.rs`; processor: `src/hooks/hook_cmd.rs`.
 - Consumers: Codex `PreToolUse`, init/show/uninstall, README, module tests.
-- Invariants: fail open; centralized registry; preserve unrelated JSON; atomic
-  configuration writes.
+- Invariants: fail open; centralized registry; preserve unrelated JSON; final
+  pre-write snapshot verification; atomic configuration writes. `hooks.json`
+  has no cooperative lock or compare-and-swap, so writers after that check are
+  outside this protection.
 - Baseline: `cargo test hook_cmd --lib` is inapplicable because RTK has no
   library target. Correct focused command: `cargo test hook_cmd`.
 - Migration/UI: none.
 - Risks: wrong wire shape, permission escalation, hook ordering, malformed JSON
-  loss, overbroad uninstall.
+  loss, overbroad uninstall, or an uncooperative writer after final snapshot
+  verification.
 - Rollback: `rtk init -g --codex --uninstall` or revert feature commits;
   existing config receives a `.bak` before write.
 

@@ -28,7 +28,9 @@ LLM agent integration layer that installs, validates, and executes command-rewri
 | Claude-MD (legacy) | `rtk init --claude-md` | 134-line RTK block | CLAUDE.md |
 | Windsurf | `rtk init -g --agent windsurf` | `.windsurfrules` | -- |
 | Cline | `rtk init --agent cline` | `.clinerules` | -- |
-| Codex | `rtk init --codex` | RTK.md in `$CODEX_HOME` or `~/.codex` | AGENTS.md |
+| Codex (global) | `rtk init -g --codex` | `$CODEX_HOME/hooks.json`, RTK.md | `AGENTS.md`; final `PreToolUse` `Bash` entry runs `rtk hook codex` |
+| Codex (global hook only) | `rtk init -g --codex --hook-only` | `$CODEX_HOME/hooks.json` | -- |
+| Codex (local awareness) | `rtk init --codex` | RTK.md | project `AGENTS.md` |
 | Cursor | `rtk init -g --agent cursor` | Cursor hook | hooks.json |
 | Pi | `rtk init --agent pi` | `.pi/extensions/rtk.ts` | -- |
 | Hermes | `rtk init --agent hermes` | Python plugin in `~/.hermes/plugins/rtk-rewrite/` | `config.yaml` `plugins.enabled` |
@@ -61,7 +63,7 @@ Controls how `rtk init` modifies agent settings files:
 
 ## Atomicity and Safety
 
-All file operations use atomic writes (tempfile + rename) to prevent corruption on crash. Settings files are backed up to `.bak` before modification. All operations are idempotent -- running `rtk init` multiple times is safe.
+All file operations use atomic writes (tempfile + rename) to prevent corruption on crash. Settings files are backed up to `.bak` before modification. All operations are idempotent -- running `rtk init` multiple times is safe. Codex `hooks.json` is verified against its read snapshot at final pre-write verification; it has no cooperative lock or compare-and-swap, so a writer after that check is outside this protection.
 
 ## Permission Model
 
@@ -89,7 +91,7 @@ Rules are loaded from all Claude Code `settings.json` files (project + global, i
 | Cursor (rtk hook cursor) | Ready | `permission: "ask",` — users will be prompted when Cursor enforces the permission; in the meantime, allow |
 | Gemini CLI (rtk hook gemini) | No (allow/deny only) | allow (limitation — no ask mode in Gemini) |
 | Copilot CLI (rtk hook copilot) | No updatedInput | deny-with-suggestion (unchanged) |
-| Codex | ask parsed but no-op | allow (limitation — fails open) |
+| Codex | Host-owned; RTK emits no `permissionDecision` fields | Codex prompts or approves the rewritten command |
 | Mistral Vibe (rtk hook vibe) | No native ask surface | passthrough — Vibe's own approval prompt fires on the rewritten command |
 
 ### Implementation

@@ -12,6 +12,10 @@
 - Hook-only created only `hooks.json` and printed no awareness path.
 - Show reported both surfaces. Uninstall retained all seeded safety hooks and
   removed only RTK hook/awareness.
+- A source changed before final pre-write snapshot verification aborted without
+  replacing `hooks.json`; replacement after that check is atomic. `hooks.json`
+  has no cooperative lock or compare-and-swap, so an uncooperative writer after
+  the check is outside this protection.
 - The real Codex home was never used.
 
 ## Registry coverage
