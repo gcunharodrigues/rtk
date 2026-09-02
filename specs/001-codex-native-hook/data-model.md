@@ -11,9 +11,13 @@ Invalid or unsupported payloads yield no response.
 ## HookResponse
 
 - `hookSpecificOutput.hookEventName`: `PreToolUse`.
+- `hookSpecificOutput.permissionDecision`: `allow` when `updatedInput` is
+  returned, as required by the Codex 0.151.0 wire parser. This is a protocol
+  compatibility marker, not an approval decision.
 - `hookSpecificOutput.updatedInput`: original `tool_input` with only `command`
   replaced.
-- Permission fields: forbidden.
+- `hookSpecificOutput.permissionDecisionReason`: forbidden. Codex remains the
+  authority for command approval and sandbox policy.
 
 ## CodexHookEntry
 

@@ -9,7 +9,7 @@
 ## Contract and safety
 
 - [x] CHK001 Is the accepted Codex input/output wire shape explicit, including preserved fields? [Clarity, Spec §FR-001–FR-003]
-- [x] CHK002 Are permission ownership and forbidden response fields unambiguous? [Safety, Spec §FR-003]
+- [x] CHK002 Is the required wire marker distinct from approval ownership, with the permission reason forbidden? [Safety, Spec §FR-003]
 - [x] CHK003 Are malformed, unsupported, disabled, unsafe, and internal-failure passthrough cases complete? [Coverage, Spec §FR-004]
 - [x] CHK004 Is the 1 MiB input boundary specified with fail-open behavior? [Edge Case, Spec §Edge Cases]
 

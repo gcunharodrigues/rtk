@@ -9,10 +9,14 @@
 ## Rewritten output
 
 ```json
-{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":{"command":"rtk git status"}}}
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{"command":"rtk git status"}}}
 ```
 
-No permission decision is allowed. Existing `tool_input` fields are preserved.
+Codex CLI 0.151.0 requires the `permissionDecision: "allow"` wire marker when
+`updatedInput` is returned. The marker makes the response compatible with the
+Codex PreToolUse parser; it does not auto-approve the command or replace the
+Codex executor's approval and sandbox decisions. `permissionDecisionReason` is
+never emitted. Existing `tool_input` fields are preserved.
 
 ## Passthrough
 

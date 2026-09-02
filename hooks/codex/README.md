@@ -1,8 +1,10 @@
 # Codex CLI Hooks
 
-RTK can rewrite supported shell commands before Codex runs them. Codex keeps
-approval decisions; RTK only returns a replacement command and never emits
-`permissionDecision` fields.
+RTK can rewrite supported shell commands before Codex runs them. A rewrite
+includes `hookSpecificOutput.permissionDecision: "allow"` because Codex's wire
+parser requires that marker with `updatedInput`; it does not auto-approve the
+command. Codex keeps approval and sandbox decisions, and RTK never emits
+`permissionDecisionReason`.
 
 ## Install
 
@@ -37,8 +39,9 @@ rtk init --show --codex
 ```
 
 Restart Codex after installation. If Codex asks for hook trust, review and
-approve the exact `rtk hook codex` command. RTK does not set Codex permission
-decisions.
+approve the exact `rtk hook codex` command. The rewrite marker is required by
+the Codex response wire format; it does not set Codex's native approval or
+sandbox decision.
 
 ## Passthrough behavior
 

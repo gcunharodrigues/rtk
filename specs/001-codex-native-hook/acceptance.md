@@ -1,6 +1,6 @@
 # Acceptance Evidence
 
-**Production candidate**: `e47d588c9e4dfa20df32d08fe54676d684fa6c59`
+**Production candidate**: `2ec0f044763cf9314fe96eafe6e25289c84cfaf0`
 
 The only changes after this production SHA are the verifier rebind and this
 feature evidence. The verifier rebuilds the production SHA instead of trusting
@@ -9,7 +9,10 @@ feature evidence. The verifier rebuilds the production SHA instead of trusting
 ## Hook and lifecycle
 
 - Supported `Bash` payload rewrote `git status` to `rtk git status`, preserved
-  sibling input fields, and emitted no permission fields.
+  sibling input fields, emitted the required
+  `hookSpecificOutput.permissionDecision: "allow"` wire marker, and omitted
+  `permissionDecisionReason`. The marker does not auto-approve; Codex retains
+  approval and sandbox authority.
 - Non-Bash, unsafe substitution, and >1 MiB payloads exited 0 with 0 stdout bytes.
 - Lifecycle tests using two global installs proved that seeded unrelated
   `PreToolUse`, `Stop`, and arbitrary root data retained JSON values; unrelated
@@ -37,8 +40,10 @@ feature evidence. The verifier rebuilds the production SHA instead of trusting
 The Codex adapter uses permission-neutral `decide_from_verdict(Default) →
 get_rewritten → rewrite_command → RULES`. The exhaustive Codex payload corpus
 asserted set equality and rewrote all **87/87 unique RTK targets exactly once**,
-while emitting no permission fields; Codex owns approval. `cargo test hook_cmd`
-passed all 118 hook tests. No Codex-specific registry exists.
+while emitting the required `permissionDecision: "allow"` wire marker and no
+`permissionDecisionReason`; Codex owns approval. `cargo test
+hooks::hook_cmd::tests` passed all 119 focused hook tests. No Codex-specific
+registry exists.
 
 ## Recorded production checks
 
@@ -59,6 +64,7 @@ reproducible measurements.
 | Group preservation (`02dc193`) | Metadata-only and pre-existing-empty-container tests failed. | 14 focused lifecycle tests passed; the fixed-candidate check below passed 28 Codex, 394 registry, 118 hook, and 199 init tests. |
 | Empty-container round trip (`dcd395d`) | Install followed by uninstall removed a pre-existing empty `PreToolUse` array. | The canonical test and a dedicated install/uninstall round-trip test passed; the fixed-candidate check below passed 29 Codex, 394 registry, 118 hook, and 200 init tests. |
 | Symlink-safe backup/write (`e47d588`) | `cargo test symlink -- --nocapture` — the three new regressions all returned `Ok(true)` instead of rejecting symlink targets. | `cargo test symlink -- --nocapture` passed 7 tests; the fixed-candidate check below passed 32 Codex, 394 registry, 118 hook, and 203 init tests; Clippy, format, and diff checks passed. |
+| Codex 0.151.0 wire marker (`2ec0f04`) | `cargo test test_codex_rewrite_emits_compatible_pretooluse_envelope -- --nocapture` — exit 101: the response returned `updatedInput` without the required `permissionDecision: "allow"` marker. | `cargo test codex -- --nocapture` passed 33 Codex tests, including the exact compatible-envelope regression and the 87/87 registry corpus; rewrites emit `allow` and omit `permissionDecisionReason`. |
 
 `git diff --check` was the recorded diff check. The final full-suite task remains
 unchecked in [tasks.md](tasks.md); no final-suite result is claimed here.
@@ -67,7 +73,7 @@ unchecked in [tasks.md](tasks.md); no final-suite result is claimed here.
 
 **Machine**: `Guilhermes-Air`; `macOS-26.6.2-arm64-arm-64bit-Mach-O`.
 
-Build `e47d588c9e4dfa20df32d08fe54676d684fa6c59` with `cargo build --release --offline`.
+Build `2ec0f044763cf9314fe96eafe6e25289c84cfaf0` with `cargo build --release --offline`.
 Each command ran with `subprocess.run(..., capture_output=True)`; bytes are
 `stdout + stderr`, and the exit status is retained, including expected failure.
 The committed fixture is `fixtures/failing-rust/`. The method cleans distinct
@@ -75,11 +81,11 @@ raw and filtered `CARGO_TARGET_DIR` paths before measuring.
 
 | Case | Raw command | Filtered command | Raw / filtered bytes | Reduction | Status |
 |---|---|---|---:|---:|---:|
-| Git log | fixed-range `git log --stat --oneline` | isolated production build: `rtk git log --stat --oneline` | 7,138 / 7,138 | 0.0% | 0 |
-| Git diff | fixed-range `git diff` | isolated production build: `rtk git diff` | 137,646 / 35,900 | 73.9% | 0 |
-| File listing | `find src docs hooks specs -type f` | isolated production build: `rtk find src docs hooks specs -type f` | 7,160 / 1,249 | 82.6% | 0 |
-| Text search | `rg -n test src` | isolated production build: `rtk rg -n test src` | 601,103 / 12,864 | 97.9% | 0 |
-| Failing Rust test | isolated fixture `cargo test --verbose` | isolated production build: `rtk cargo test --verbose` | 2,315 / 503 | 78.3% | 101 |
+| Git log | fixed-range `git log --stat --oneline` | isolated production build: `rtk git log --stat --oneline` | 7,854 / 7,854 | 0.0% | 0 |
+| Git diff | fixed-range `git diff` | isolated production build: `rtk git diff` | 140,823 / 36,656 | 74.0% | 0 |
+| File listing | `find src docs hooks specs -type f` | isolated production build: `rtk find src docs hooks specs -type f` | 7,160 / 1,258 | 82.4% | 0 |
+| Text search | `rg -n test src` | isolated production build: `rtk rg -n test src` | 601,233 / 12,936 | 97.8% | 0 |
+| Failing Rust test | isolated fixture `cargo test --verbose` | isolated production build: `rtk cargo test --verbose` | 2,387 / 512 | 78.6% | 101 |
 
 The executable comparator is:
 
@@ -87,8 +93,8 @@ The executable comparator is:
 python3 specs/001-codex-native-hook/verify_acceptance.py
 ```
 
-It reconstructs `e47d588` with `git archive`, builds that tree offline, and runs
-the corpus there. It returned `ok: true` and **78.3% median reduction**. Its
+It reconstructs `2ec0f04` with `git archive`, builds that tree offline, and runs
+the corpus there. It returned `ok: true` and **78.6% median reduction**. Its
 case-specific assertions proved: equal commit count and log output; every
 changed diff path plus exact file/insertion/deletion totals; exact file and
 search counts; representative paths; truncation markers; readable isolated
@@ -113,7 +119,7 @@ import json, statistics, subprocess, time
 
 payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": "git status"}}).encode()
 env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "RTK_HOOK_AUDIT": "0"}
-command = ["./target/release/rtk", "hook", "codex"]
+command = ["target/codex-corpus/production-target/release/rtk", "hook", "codex"]
 
 def run():
     started = time.perf_counter_ns()
@@ -127,24 +133,25 @@ samples = sorted(run() for _ in range(200))
 print(statistics.median(samples), samples[189], samples[-1])
 ```
 
-For `e47d588c9e4dfa20df32d08fe54676d684fa6c59`, the recorded median was
-**6.887 ms**, p95 **7.576 ms**, maximum **8.205 ms**. The timing data does not
+For `2ec0f044763cf9314fe96eafe6e25289c84cfaf0`, the recorded median was
+**7.970 ms**, p95 **9.255 ms**, maximum **9.988 ms**. The timing data does not
 establish the cause of the maximum. The acceptance target is median < 10 ms; no
 p95 or maximum target is claimed.
 
 ## Fixed-candidate Focused Check
 
-- Candidate: `e47d588c9e4dfa20df32d08fe54676d684fa6c59`.
+- Candidate: `2ec0f044763cf9314fe96eafe6e25289c84cfaf0`.
 - Scope: `src/main.rs`, `src/hooks/{hook_cmd,init,constants,permissions}.rs`,
   `src/discover/{registry,rules}.rs`, and `hooks/codex/README.md`.
 - Consumers: Codex `PreToolUse`, CLI parsing, init/show/uninstall, shared registry.
-- Command: `cargo test codex && cargo test discover::registry::tests && cargo test hooks::hook_cmd::tests && cargo test hooks::init::tests`.
-- Result: PASS — 32 Codex, 394 registry, 118 hook, and 203 init tests.
-- Individual test execution elapsed: 0.09, 0.34, 0.09, and 0.06 seconds respectively;
-  the slowest focused step was the registry suite at 0.34 seconds.
+- Commands: `cargo test codex -- --nocapture`; `cargo test discover::registry::tests`;
+  `cargo test hooks::hook_cmd::tests`; `cargo test hooks::init::tests`.
+- Result: PASS — 33 Codex, 394 registry, 119 hook, and 203 init tests.
+- `/usr/bin/time -p` real elapsed: 0.40, 0.46, 0.25, and 0.21 seconds
+  respectively; the slowest focused step was the registry suite at 0.46 seconds.
 - Focused target: 60 seconds; met.
 
-## Independent Review and Final Gate
+## Prior Independent Review and Final Gate
 
 - Closed review SHA: `d595565342ee49eaa404a9dff356e431744e7e3c`.
 - Independent review: PASS.
@@ -153,9 +160,11 @@ p95 or maximum target is claimed.
   8 ignored, 0 failed; format and Clippy passed.
 - `/usr/bin/time -p` reported `real 21.43`. The slowest test target was
   `copilot_selfheal_test` at 2.33 seconds.
-- This section and the matching task state are evidence-only documentation
-  written after the gate; production remains
-  `e47d588c9e4dfa20df32d08fe54676d684fa6c59`.
+- This historical section is evidence-only documentation for the prior
+  `e47d588c9e4dfa20df32d08fe54676d684fa6c59` candidate. The current
+  compatibility remediation is `2ec0f044763cf9314fe96eafe6e25289c84cfaf0` and
+  is intentionally covered by the focused gates recorded above, without
+  claiming a new full-suite run.
 
 ## Documentation Impact Classification
 

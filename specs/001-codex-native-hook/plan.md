@@ -4,8 +4,10 @@
 
 ## Summary
 
-Add `rtk hook codex`, sharing Claude's command decision path but emitting a
-Codex response without permission decisions. Extend global Codex init to merge
+Add `rtk hook codex`, sharing Claude's command decision path and emitting a
+Codex response with the protocol-required `permissionDecision: "allow"` marker
+but no permission reason. The marker does not change Codex approval or sandbox
+authority. Extend global Codex init to merge
 an RTK `PreToolUse` entry last in `$CODEX_HOME/hooks.json`; keep local init
 instruction-only. Show, uninstall, docs, and a disposable lab cover lifecycle.
 
@@ -19,7 +21,7 @@ instruction-only. Show, uninstall, docs, and a disposable lab cover lifecycle.
 
 **Testing**: Rust tests; `cargo fmt`, `cargo clippy`, `cargo test`
 
-**Target**: Codex CLI 0.146.0 on macOS; portable filesystem logic
+**Target**: Codex CLI 0.151.0 on macOS; portable filesystem logic
 
 **Project**: Single binary CLI
 

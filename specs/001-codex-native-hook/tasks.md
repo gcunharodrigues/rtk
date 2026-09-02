@@ -39,7 +39,7 @@
 
 ## Dependencies
 
-`T001 → T002 → T003–T005 → T006–T008 → T009–T010 → T011–T014`.
+`T001 → T002 → T003–T005 → T006–T008 → T009–T010 → T011–T014 → T030–T031`.
 Production tasks are serial because they overlap the CLI and hook lifecycle.
 
 ## Execution Waves
@@ -49,6 +49,7 @@ Production tasks are serial because they overlap the CLI and hook lifecycle.
 - Wave 2: T006–T008 (configuration lifecycle; one logical commit).
 - Wave 3: T009–T010 (acceptance evidence; depends on both production commits).
 - Wave 4: T011–T014 (closed-candidate checks; strictly serial).
+- Wave 5: T030–T031 (Codex wire compatibility remediation; strictly serial).
 
 ## Strategy
 
@@ -95,8 +96,15 @@ constitution requires observed RGR, not a broken commit.
   three symlink regressions returned `Ok(true)` instead of rejecting; GREEN:
   seven symlink, 32 Codex, 394 registry, 118 hook, and 203 init tests passed,
   with format, Clippy, diff, and fixed-SHA verifier checks passing.
+- `2ec0f04 fix(hook): add Codex compatibility permission marker` — RED:
+  `cargo test test_codex_rewrite_emits_compatible_pretooluse_envelope -- --nocapture`
+  returned exit 101 because `updatedInput` lacked Codex 0.151.0's required
+  `permissionDecision: "allow"` marker; GREEN: the compatible envelope,
+  permission-preserving rewrite, fail-open cases, and 87/87 registry corpus
+  passed in 33 Codex tests, with the marker present and
+  `permissionDecisionReason` absent.
 - Evidence paths `specs/001-codex-native-hook/{acceptance.md,tasks.md}` bind
-  to production SHA `e47d588c9e4dfa20df32d08fe54676d684fa6c59`.
+  to production SHA `2ec0f044763cf9314fe96eafe6e25289c84cfaf0`.
 
 ## Phase 6: Convergence
 
@@ -130,3 +138,8 @@ constitution requires observed RGR, not a broken commit.
 ## Phase 11: Symlink safety remediation
 
 - [x] T029 Reject Codex backup symlink destinations and dangling `hooks.json` symlinks without altering configuration, sentinel, or rollback behavior; rebind evidence to the production SHA
+
+## Phase 12: Codex 0.151.0 wire compatibility remediation
+
+- [x] T030 Add a failing compatible-envelope regression and require Codex's `permissionDecision: "allow"` wire marker with `updatedInput`, while retaining no `permissionDecisionReason` and native approval ownership
+- [x] T031 Rebind the fixed-SHA verifier, corpus, latency, acceptance contract, and operator docs to production `2ec0f044763cf9314fe96eafe6e25289c84cfaf0`; run focused tests, format, Clippy, and diff checks
