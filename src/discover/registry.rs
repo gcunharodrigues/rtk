@@ -223,12 +223,16 @@ pub fn classify_command(cmd: &str) -> Classification {
 }
 
 fn rule_is_candidate(cmd: &str, rule: &RtkRule) -> bool {
+    let command = cmd.split(char::is_whitespace).next();
     rule.rewrite_prefixes
         .iter()
-        .any(|prefix| cmd.starts_with(prefix))
+        .any(|prefix| {
+            cmd.starts_with(prefix)
+                || prefix.split(char::is_whitespace).next() == command
+        })
         // These patterns accept interpreter/tool spellings not enumerable in
         // rewrite_prefixes (e.g. python3.12 and php vendor/bin/phpunit).
-        || (cmd.split(char::is_whitespace).next().is_some_and(|word| {
+        || (command.is_some_and(|word| {
             (word.starts_with("python") && rule.pattern.starts_with("^(python"))
                 || (word == "php" && rule.pattern.contains("php\\s+"))
         }))
@@ -6039,6 +6043,7 @@ mod tests {
         for command in [
             "git status",
             "npx tsc --noEmit",
+            "npm exec lint",
             "python3.12 -m pytest tests/",
             "php vendor/bin/phpunit tests/",
             "du-foo",
@@ -6067,5 +6072,13 @@ mod tests {
                 "prefilter is not narrow for {command}"
             );
         }
+
+        assert!(matches!(
+            classify_command("npm exec lint"),
+            Classification::Supported {
+                rtk_equivalent: "rtk lint",
+                ..
+            }
+        ));
     }
 }
