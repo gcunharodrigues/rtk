@@ -1,6 +1,6 @@
 # Acceptance Evidence
 
-**Production candidate**: `d24150d8edada0f0241e2f640558c59978d9f7fb`
+**Production candidate**: `9838e31df58e9b8fe4872235de897ae311e45d3f`
 
 ## Hook and lifecycle
 
@@ -17,6 +17,9 @@
   has no cooperative lock or compare-and-swap, so an uncooperative writer after
   the check is outside this protection.
 - The real Codex home was never used.
+- A synthetic Claude `Bash(git status)` deny did not suppress the Codex rewrite.
+  `--show --codex` reports healthy only for one canonical final entry; malformed,
+  duplicate, disabled, wrong-matcher, wrong-timeout, and wrong-position cases fail.
 
 ## Registry coverage
 
@@ -49,13 +52,13 @@ invocations measured **7.275 ms median** and 8.047 ms p95. SC-005 passes.
 
 ## Fixed-candidate Focused Check
 
-- Candidate: `d24150d8edada0f0241e2f640558c59978d9f7fb`.
+- Candidate: `9838e31df58e9b8fe4872235de897ae311e45d3f`.
 - Scope: `src/main.rs`, `src/hooks/{hook_cmd,init,constants}.rs`,
   `src/discover/registry.rs`, and `hooks/codex/README.md`.
 - Consumers: Codex `PreToolUse`, CLI parsing, init/show/uninstall, shared registry.
 - Command: `cargo test codex && cargo test discover::registry::tests`.
-- Result: PASS — 21 Codex and 393 registry tests.
-- Elapsed: 0.70 seconds; slowest step: registry tests at 0.24 seconds.
+- Result: PASS — 23 Codex and 393 registry tests.
+- Elapsed: 0.76 seconds; slowest step: registry tests at 0.25 seconds.
 - Focused target: 60 seconds; met.
 
 ## Documentation Impact Classification

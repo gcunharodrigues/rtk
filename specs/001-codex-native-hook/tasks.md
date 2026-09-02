@@ -72,8 +72,12 @@ then accept only with measured savings and semantic evidence.
 - `3828682` and `d24150d` align every canonical Codex hook surface and contract
   with native installation, Codex-owned permissions, and the detectable
   concurrent-change boundary.
+- `9838e31 fix(codex): isolate permissions and validate hook status` — RED:
+  Claude deny suppressed Codex rewrite and malformed hook reported healthy;
+  GREEN: both regressions fixed, 23 Codex tests, Clippy, format, and diff checks
+  passed.
 - Evidence paths `specs/001-codex-native-hook/{acceptance.md,tasks.md}` bind
-  to production SHA `d24150d8edada0f0241e2f640558c59978d9f7fb`.
+  to production SHA `9838e31df58e9b8fe4872235de897ae311e45d3f`.
 
 ## Phase 6: Convergence
 
@@ -83,3 +87,8 @@ then accept only with measured savings and semantic evidence.
 
 - [x] T016 Add an exhaustive Codex hook corpus test with one valid representative for every unique RTK registry target, and record its results per SC-001
 - [x] T017 Clarify the detectable concurrent-change boundary and update every canonical Codex hook document identified by review
+
+## Phase 8: Permission and status remediation
+
+- [x] T018 Make Codex rewriting independent of Claude permission files and prove a Claude deny cannot suppress it
+- [x] T019 Require the complete canonical hook shape, uniqueness, and final position before `--show --codex` reports healthy
