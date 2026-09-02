@@ -987,6 +987,7 @@ fn run_droid_inner_with_rules(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     fn rewrite_command_no_prefixes(cmd: &str, excluded: &[String]) -> Option<String> {
         crate::discover::registry::rewrite_command(cmd, excluded, &[])
@@ -1504,6 +1505,132 @@ mod tests {
             }
         })
         .to_string()
+    }
+
+    const CODEX_REGISTRY_CORPUS: &[(&str, &str)] = &[
+        ("git status", "rtk git"),
+        ("gh pr", "rtk gh"),
+        ("glab mr", "rtk glab"),
+        ("cargo test", "rtk cargo"),
+        ("pnpm exec", "rtk pnpm"),
+        ("npm exec", "rtk npm"),
+        ("npx tool", "rtk npx"),
+        ("cat README.md", "rtk read"),
+        ("grep pattern README.md", "rtk grep"),
+        ("rg pattern README.md", "rtk rg"),
+        ("ls", "rtk ls"),
+        ("find . -name '*.rs'", "rtk find"),
+        ("tsc --noEmit", "rtk tsc"),
+        ("eslint .", "rtk lint"),
+        ("prettier --check .", "rtk prettier"),
+        ("next build", "rtk next"),
+        ("jest", "rtk jest"),
+        ("vitest", "rtk vitest"),
+        ("ctest", "rtk ctest"),
+        ("playwright test", "rtk playwright"),
+        ("prisma migrate status", "rtk prisma"),
+        ("docker ps", "rtk docker"),
+        ("kubectl get pods", "rtk kubectl"),
+        ("oc get pods", "rtk oc"),
+        ("tree", "rtk tree"),
+        ("diff old.txt new.txt", "rtk diff"),
+        ("curl https://example.com", "rtk curl"),
+        ("wget https://example.com", "rtk wget"),
+        ("mypy", "rtk mypy"),
+        ("ruff check .", "rtk ruff"),
+        ("pytest", "rtk pytest"),
+        ("pip list", "rtk pip"),
+        ("uv sync", "rtk uv"),
+        ("go test ./...", "rtk go"),
+        ("golangci-lint run", "rtk golangci-lint run"),
+        ("sbt test", "rtk sbt"),
+        ("bundle install", "rtk bundle"),
+        ("rake test", "rtk rake"),
+        ("rspec", "rtk rspec"),
+        ("rubocop", "rtk rubocop"),
+        ("php artisan list", "rtk php"),
+        ("php run-tests.php", "rtk phpt"),
+        ("phpunit", "rtk phpunit"),
+        ("phpstan analyze", "rtk phpstan"),
+        ("pest", "rtk pest"),
+        ("paratest", "rtk paratest"),
+        ("ecs", "rtk ecs"),
+        ("pint", "rtk pint"),
+        ("aws sts get-caller-identity", "rtk aws"),
+        ("psql", "rtk psql"),
+        ("ansible-playbook site.yml", "rtk ansible-playbook"),
+        ("brew install ripgrep", "rtk brew"),
+        ("composer install", "rtk composer"),
+        ("df", "rtk df"),
+        ("dotnet build", "rtk dotnet"),
+        ("du -sh .", "rtk du"),
+        ("fail2ban-client status", "rtk fail2ban-client"),
+        ("gcloud version", "rtk gcloud"),
+        ("./gradlew test", "rtk gradlew"),
+        ("hadolint Dockerfile", "rtk hadolint"),
+        ("helm list", "rtk helm"),
+        ("iptables -L", "rtk iptables"),
+        ("make", "rtk make"),
+        ("markdownlint README.md", "rtk markdownlint"),
+        ("mix compile", "rtk mix"),
+        ("mvn test", "rtk mvn"),
+        ("mvnd test", "rtk mvnd"),
+        ("ping -c 1 example.com", "rtk ping"),
+        ("pio run", "rtk pio"),
+        ("poetry install", "rtk poetry"),
+        ("pre-commit run", "rtk pre-commit"),
+        ("ps", "rtk ps"),
+        ("pulumi preview", "rtk pulumi"),
+        ("quarto render", "rtk quarto"),
+        ("rsync --dry-run src/ dest/", "rtk rsync"),
+        ("shellcheck script.sh", "rtk shellcheck"),
+        ("shopify theme push", "rtk shopify"),
+        ("sops config.yaml", "rtk sops"),
+        ("swift build", "rtk swift"),
+        ("systemctl status", "rtk systemctl"),
+        ("terraform plan", "rtk terraform"),
+        ("tofu plan", "rtk tofu"),
+        ("trunk build", "rtk trunk"),
+        ("yamllint .", "rtk yamllint"),
+        ("wc -l README.md", "rtk wc"),
+        ("gt log", "rtk gt"),
+        ("liquibase status", "rtk liquibase"),
+    ];
+
+    #[test]
+    fn test_codex_rewrites_every_registry_target_once_without_permissions() {
+        let registry_targets: BTreeSet<_> = crate::discover::rules::RULES
+            .iter()
+            .map(|rule| rule.rtk_cmd)
+            .collect();
+        let corpus_targets: BTreeSet<_> = CODEX_REGISTRY_CORPUS
+            .iter()
+            .map(|(_, target)| *target)
+            .collect();
+
+        assert_eq!(CODEX_REGISTRY_CORPUS.len(), corpus_targets.len());
+        assert_eq!(corpus_targets, registry_targets);
+
+        for &(cmd, target) in CODEX_REGISTRY_CORPUS {
+            let result = run_codex_inner(&codex_input("Bash", cmd))
+                .unwrap_or_else(|| panic!("expected Codex rewrite for {cmd:?}"));
+            let output: Value = serde_json::from_str(&result).unwrap();
+            let hook = &output["hookSpecificOutput"];
+            assert!(hook.get("permissionDecision").is_none(), "{cmd:?}");
+            assert!(hook.get("permissionDecisionReason").is_none(), "{cmd:?}");
+
+            let rewritten = hook["updatedInput"]["command"]
+                .as_str()
+                .unwrap_or_else(|| panic!("missing rewritten command for {cmd:?}"));
+            let suffix = rewritten
+                .strip_prefix(target)
+                .unwrap_or_else(|| panic!("{cmd:?} rewrote to {rewritten:?}, expected {target:?}"));
+            assert!(
+                suffix.is_empty() || suffix.starts_with(' '),
+                "{cmd:?} rewrote to {rewritten:?}, expected target {target:?} once"
+            );
+            assert_eq!(rewritten.matches(target).count(), 1, "{cmd:?}");
+        }
     }
 
     #[test]
