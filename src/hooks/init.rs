@@ -4441,8 +4441,9 @@ fn show_claude_config() -> Result<()> {
     println!("  rtk init -g --uninstall     # Remove all RTK artifacts");
     println!("  rtk init -g --claude-md     # Legacy: full injection into ~/.claude/CLAUDE.md");
     println!("  rtk init -g --hook-only     # Hook only, no RTK.md");
-    println!("  rtk init --codex            # Configure local AGENTS.md + RTK.md");
-    println!("  rtk init -g --codex         # Configure $CODEX_HOME/AGENTS.md + $CODEX_HOME/RTK.md (or ~/.codex/)");
+    println!("  rtk init --codex            # Local Codex awareness only (AGENTS.md + RTK.md)");
+    println!("  rtk init -g --codex         # Global Codex PreToolUse hook + awareness");
+    println!("  rtk init -g --codex --hook-only  # Global Codex PreToolUse hook only");
     println!("  rtk init -g --opencode      # OpenCode plugin only");
     println!("  rtk init -g --agent cursor  # Install Cursor Agent hooks");
 
@@ -4512,14 +4513,14 @@ fn show_codex_config() -> Result<()> {
     }
 
     println!("\nUsage:");
-    println!("  rtk init --codex              # Configure local AGENTS.md + RTK.md");
-    println!("  rtk init -g --codex           # Configure awareness + hooks.json");
-    println!("  rtk init -g --codex --hook-only  # Install only hooks.json");
+    println!("  rtk init --codex              # Local awareness only (AGENTS.md + RTK.md)");
+    println!("  rtk init -g --codex           # Global PreToolUse hook + awareness");
+    println!("  rtk init -g --codex --hook-only  # Global PreToolUse hook only");
     println!("  rtk init --show --codex       # Show awareness and hook state");
     println!("  rtk init -g --codex --uninstall  # Remove global Codex RTK artifacts");
     println!("\nGuidance:");
     println!("  Restart Codex CLI after install or uninstall.");
-    println!("  If prompted, review and trust the `rtk hook codex` command.");
+    println!("  Codex owns approval for the `Bash` hook command: `rtk hook codex`.");
     println!("  Unsupported, malformed, and already-prefixed commands pass through unchanged.");
 
     Ok(())

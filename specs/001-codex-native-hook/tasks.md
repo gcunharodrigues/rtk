@@ -92,3 +92,7 @@ then accept only with measured savings and semantic evidence.
 
 - [x] T018 Make Codex rewriting independent of Claude permission files and prove a Claude deny cannot suppress it
 - [x] T019 Require the complete canonical hook shape, uniqueness, and final position before `--show --codex` reports healthy
+
+## Phase 9: Documentation remediation
+
+- [x] T020 Replace remaining Codex prompt-only guidance with global `PreToolUse` installation (`rtk init -g --codex`, optional `--hook-only`, `Bash` → `rtk hook codex`), Codex-owned approval, and local awareness-only mode

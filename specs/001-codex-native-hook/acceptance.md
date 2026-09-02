@@ -23,11 +23,11 @@
 
 ## Registry coverage
 
-The Codex adapter calls the same `decide_hook_action → get_rewritten →
-rewrite_command → RULES` path as Claude. The exhaustive Codex payload corpus
+The Codex adapter uses permission-neutral `decide_from_verdict(Default) →
+get_rewritten → rewrite_command → RULES`. The exhaustive Codex payload corpus
 asserted set equality and rewrote all **87/87 unique RTK targets exactly once**,
-while emitting no permission fields. `cargo test hook_cmd` passed all 116 hook
-tests. No Codex-specific registry exists.
+while emitting no permission fields; Codex owns approval. `cargo test hook_cmd`
+passed all 116 hook tests. No Codex-specific registry exists.
 
 ## Byte savings
 
@@ -53,7 +53,7 @@ invocations measured **7.275 ms median** and 8.047 ms p95. SC-005 passes.
 ## Fixed-candidate Focused Check
 
 - Candidate: `9838e31df58e9b8fe4872235de897ae311e45d3f`.
-- Scope: `src/main.rs`, `src/hooks/{hook_cmd,init,constants}.rs`,
+- Scope: `src/main.rs`, `src/hooks/{hook_cmd,init,constants,permissions}.rs`,
   `src/discover/registry.rs`, and `hooks/codex/README.md`.
 - Consumers: Codex `PreToolUse`, CLI parsing, init/show/uninstall, shared registry.
 - Command: `cargo test codex && cargo test discover::registry::tests`.
