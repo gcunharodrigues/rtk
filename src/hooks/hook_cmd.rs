@@ -697,7 +697,11 @@ fn run_claude_inner(input: &str) -> Option<String> {
 
 // ── Codex native hook ─────────────────────────────────────────
 
-/// Build the Codex PreToolUse response, leaving approval decisions to Codex.
+/// Build the Codex PreToolUse response.
+///
+/// Codex requires `permissionDecision: "allow"` to accept `updatedInput`; the
+/// field is only a wire compatibility marker and does not replace Codex's
+/// native approval or sandbox decision.
 fn process_codex_payload(v: &Value) -> Option<Value> {
     if v.get("tool_name").and_then(Value::as_str) != Some("Bash") {
         return None;
@@ -723,6 +727,7 @@ fn process_codex_payload(v: &Value) -> Option<Value> {
     Some(json!({
         "hookSpecificOutput": {
             "hookEventName": PRE_TOOL_USE_KEY,
+            "permissionDecision": "allow",
             "updatedInput": updated_input
         }
     }))
@@ -1599,7 +1604,7 @@ mod tests {
     ];
 
     #[test]
-    fn test_codex_rewrites_every_registry_target_once_without_permissions() {
+    fn test_codex_rewrites_every_registry_target_once_with_wire_marker() {
         let registry_targets: BTreeSet<_> = crate::discover::rules::RULES
             .iter()
             .map(|rule| rule.rtk_cmd)
@@ -1617,7 +1622,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("expected Codex rewrite for {cmd:?}"));
             let output: Value = serde_json::from_str(&result).unwrap();
             let hook = &output["hookSpecificOutput"];
-            assert!(hook.get("permissionDecision").is_none(), "{cmd:?}");
+            assert_eq!(hook["permissionDecision"], "allow", "{cmd:?}");
             assert!(hook.get("permissionDecisionReason").is_none(), "{cmd:?}");
 
             let rewritten = hook["updatedInput"]["command"]
@@ -1651,7 +1656,7 @@ mod tests {
     }
 
     #[test]
-    fn test_codex_rewrite_preserves_input_and_permissions() {
+    fn test_codex_rewrite_preserves_input_and_wire_marker() {
         let result = run_codex_inner(&codex_input("Bash", "git status")).unwrap();
         let v: Value = serde_json::from_str(&result).unwrap();
         let hook = &v["hookSpecificOutput"];
@@ -1660,8 +1665,29 @@ mod tests {
         assert_eq!(hook["updatedInput"]["command"], "rtk git status");
         assert_eq!(hook["updatedInput"]["timeout"], 30000);
         assert_eq!(hook["updatedInput"]["description"], "Check repo status");
-        assert!(hook.get("permissionDecision").is_none());
+        assert_eq!(hook["permissionDecision"], "allow");
         assert!(hook.get("permissionDecisionReason").is_none());
+    }
+
+    #[test]
+    fn test_codex_rewrite_emits_compatible_pretooluse_envelope() {
+        let input = codex_input("Bash", "git status");
+        let output: Value = serde_json::from_str(&run_codex_inner(&input).unwrap()).unwrap();
+
+        assert_eq!(
+            output,
+            json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "updatedInput": {
+                        "command": "rtk git status",
+                        "timeout": 30000,
+                        "description": "Check repo status"
+                    }
+                }
+            })
+        );
     }
 
     #[test]
