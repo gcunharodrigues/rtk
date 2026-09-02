@@ -8,6 +8,9 @@ use crate::discover::lexer::split_for_permissions;
 use serde_json::Value;
 use std::path::PathBuf;
 
+#[cfg(test)]
+pub(crate) static CLAUDE_CONFIG_DIR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Verdict from checking a command against Claude Code's permission rules.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum PermissionVerdict {

@@ -2512,27 +2512,8 @@ fn remove_codex_hook_entry(root: &mut serde_json::Value) -> Result<bool> {
 }
 
 fn codex_hook_already_present(root: &serde_json::Value) -> Result<bool> {
-    let Some(root_obj) = root.as_object() else {
-        anyhow::bail!("Codex hooks.json root must be an object")
-    };
-    let Some(hooks_value) = root_obj.get("hooks") else {
-        return Ok(false);
-    };
-    let hooks_obj = hooks_value
-        .as_object()
-        .context("Codex hooks.json 'hooks' value must be an object")?;
-    let Some(pre_value) = hooks_obj.get(PRE_TOOL_USE_KEY) else {
-        return Ok(false);
-    };
-    let pre_tool_use = pre_value
-        .as_array()
-        .context("Codex hooks.json 'PreToolUse' value must be an array")?;
-    Ok(pre_tool_use.iter().any(|entry| {
-        entry
-            .get("hooks")
-            .and_then(|value| value.as_array())
-            .is_some_and(|hooks| hooks.iter().any(is_codex_hook))
-    }))
+    let mut canonicalized = root.clone();
+    Ok(!merge_codex_hook_entry(&mut canonicalized)?)
 }
 
 fn read_codex_hooks_snapshot(path: &Path) -> Result<(Option<Vec<u8>>, serde_json::Value)> {
@@ -5774,6 +5755,92 @@ mod tests {
     }
 
     #[test]
+    fn test_codex_hook_status_requires_one_canonical_final_entry() {
+        let canonical = codex_hook_entry();
+        let cases = [
+            (
+                "malformed",
+                serde_json::json!({
+                    "hooks": { "PreToolUse": [{
+                        "matcher": "Bash",
+                        "hooks": [{
+                            "type": "http",
+                            "command": CODEX_HOOK_COMMAND,
+                            "timeout": CODEX_HOOK_TIMEOUT
+                        }]
+                    }]}
+                }),
+            ),
+            (
+                "duplicate",
+                serde_json::json!({
+                    "hooks": { "PreToolUse": [canonical.clone(), canonical.clone()] }
+                }),
+            ),
+            (
+                "wrong matcher",
+                serde_json::json!({
+                    "hooks": { "PreToolUse": [{
+                        "matcher": "Shell",
+                        "hooks": [{
+                            "type": "command",
+                            "command": CODEX_HOOK_COMMAND,
+                            "timeout": CODEX_HOOK_TIMEOUT
+                        }]
+                    }]}
+                }),
+            ),
+            (
+                "wrong timeout",
+                serde_json::json!({
+                    "hooks": { "PreToolUse": [{
+                        "matcher": "Bash",
+                        "hooks": [{
+                            "type": "command",
+                            "command": CODEX_HOOK_COMMAND,
+                            "timeout": 10
+                        }]
+                    }]}
+                }),
+            ),
+            (
+                "wrong position",
+                serde_json::json!({
+                    "hooks": { "PreToolUse": [
+                        canonical.clone(),
+                        { "matcher": "Bash", "hooks": [{ "type": "command", "command": "user-hook" }] }
+                    ]}
+                }),
+            ),
+            (
+                "disabled",
+                serde_json::json!({
+                    "hooks": { "PreToolUse": [{
+                        "matcher": "Bash",
+                        "disabled": true,
+                        "hooks": [{
+                            "type": "command",
+                            "command": CODEX_HOOK_COMMAND,
+                            "timeout": CODEX_HOOK_TIMEOUT
+                        }]
+                    }]}
+                }),
+            ),
+        ];
+
+        assert!(codex_hook_already_present(&serde_json::json!({
+            "hooks": { "PreToolUse": [canonical] }
+        }))
+        .unwrap());
+        for (name, root) in cases {
+            assert!(
+                !codex_hook_already_present(&root).unwrap(),
+                "{name} Codex hook must be unhealthy"
+            );
+        }
+    }
+
+    #[test]
     fn test_codex_hook_merge_deduplicates_and_repositions_exact_entries() {
         let temp = TempDir::new().unwrap();
         let path = temp.path().join(HOOKS_JSON);
@@ -7757,13 +7824,14 @@ mod tests {
     }
 
     use std::sync::Mutex;
-    static CLAUDE_DIR_LOCK: Mutex<()> = Mutex::new(());
     static PI_DIR_LOCK: Mutex<()> = Mutex::new(());
     /// Serialises all tests that mutate the process-wide working directory.
     static CWD_LOCK: Mutex<()> = Mutex::new(());
 
     fn with_claude_dir_override<F: FnOnce(&Path)>(tmp: &TempDir, f: F) {
-        let _guard = CLAUDE_DIR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = crate::hooks::permissions::CLAUDE_CONFIG_DIR_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let claude_dir = tmp.path().join(CLAUDE_DIR);
         fs::create_dir_all(&claude_dir).unwrap();
 

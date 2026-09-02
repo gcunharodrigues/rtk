@@ -708,7 +708,7 @@ fn process_codex_payload(v: &Value) -> Option<Value> {
         .and_then(Value::as_str)
         .filter(|cmd| !cmd.is_empty())?;
 
-    let rewritten = match decide_hook_action(cmd, permissions::Host::Claude) {
+    let rewritten = match decide_from_verdict(cmd, PermissionVerdict::Default) {
         HookDecision::AllowRewrite(rewritten) | HookDecision::AskRewrite(rewritten) => rewritten,
         HookDecision::Deny | HookDecision::Defer => return None,
     };
@@ -988,6 +988,7 @@ fn run_droid_inner_with_rules(
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+    use tempfile::TempDir;
 
     fn rewrite_command_no_prefixes(cmd: &str, excluded: &[String]) -> Option<String> {
         crate::discover::registry::rewrite_command(cmd, excluded, &[])
@@ -1645,6 +1646,35 @@ mod tests {
         assert_eq!(hook["updatedInput"]["description"], "Check repo status");
         assert!(hook.get("permissionDecision").is_none());
         assert!(hook.get("permissionDecisionReason").is_none());
+    }
+
+    #[test]
+    fn test_codex_rewrite_ignores_claude_deny_rules() {
+        let temp = TempDir::new().unwrap();
+        let claude_dir = temp.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::write(
+            claude_dir.join("settings.json"),
+            r#"{"permissions":{"deny":["Bash(git status)"]}}"#,
+        )
+        .unwrap();
+
+        let _guard = permissions::CLAUDE_CONFIG_DIR_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let original = std::env::var_os("CLAUDE_CONFIG_DIR");
+        std::env::set_var("CLAUDE_CONFIG_DIR", &claude_dir);
+        let result = run_codex_inner(&codex_input("Bash", "git status"));
+        match original {
+            Some(value) => std::env::set_var("CLAUDE_CONFIG_DIR", value),
+            None => std::env::remove_var("CLAUDE_CONFIG_DIR"),
+        }
+
+        let output: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(
+            output["hookSpecificOutput"]["updatedInput"]["command"],
+            "rtk git status"
+        );
     }
 
     #[test]
