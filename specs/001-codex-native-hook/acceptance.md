@@ -7,8 +7,12 @@
 - Supported `Bash` payload rewrote `git status` to `rtk git status`, preserved
   sibling input fields, and emitted no permission fields.
 - Non-Bash, unsafe substitution, and >1 MiB payloads exited 0 with 0 stdout bytes.
-- Two global installs preserved seeded `PreToolUse`, `Stop`, and arbitrary root
-  data; exactly one RTK hook remained last with timeout 5.
+- Lifecycle tests using two global installs proved that seeded unrelated
+  `PreToolUse`, `Stop`, and arbitrary root data retained JSON values; unrelated
+  hook groups and entries retained their relative order. Exactly one RTK hook
+  remained last with timeout 5. Whitespace, escaping, and object-key order may
+  be canonically reserialized; the pre-write `hooks.json.bak` retained the prior
+  bytes for textual rollback.
 - Hook-only created only `hooks.json` and printed no awareness path.
 - Show reported both surfaces. Uninstall retained all seeded safety hooks and
   removed only RTK hook/awareness.
@@ -80,7 +84,10 @@ changed diff path plus exact file/insertion/deletion totals; exact file and
 search counts; representative paths; truncation markers; readable isolated
 recovery files containing hidden paths;
 and failing-test identity, count, and status 101. Adversarial self-checks reject
-false diff totals and irrelevant recovery files. Every raw case exceeded 1 KiB.
+false diff totals and irrelevant recovery files. The symlink safety self-test
+returned `symlinked_corpus_rejected_without_touching_sentinel: true`: it rejected
+a symlinked corpus directory without changing its external sentinel. Every raw
+case exceeded 1 KiB.
 The values are machine-specific; the semantic assertions and 30% median gate
 are the acceptance criteria.
 

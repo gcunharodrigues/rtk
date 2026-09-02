@@ -35,7 +35,7 @@ A Codex user can install, inspect, and remove the integration without losing exi
 
 **Acceptance Scenarios**:
 
-1. **Given** existing Codex hooks, **When** RTK is installed, **Then** existing entries remain byte-equivalent and RTK is appended last.
+1. **Given** existing Codex hooks, **When** RTK is installed, **Then** unrelated hooks and root data remain JSON-value-equivalent, unrelated hook groups and entries retain their relative order, and RTK is appended last. Whitespace, escaping, and object-key order may be canonically reserialized when RTK changes `hooks.json`; its pre-write backup preserves the prior bytes for textual rollback.
 2. **Given** an installed RTK hook, **When** uninstall runs, **Then** only RTK-owned entries and awareness files are removed.
 
 ---
@@ -68,7 +68,7 @@ A maintainer can determine whether the Codex integration saves meaningful shell-
 - **FR-002**: The processor MUST rewrite only Codex shell commands with non-empty textual command input.
 - **FR-003**: The processor MUST preserve Codex-native approval behavior, MUST NOT auto-approve rewritten commands, and MUST NOT emit `permissionDecision` fields.
 - **FR-004**: Unsupported or invalid inputs and internal failures MUST pass through without blocking execution.
-- **FR-005**: Global Codex initialization MUST merge one final `PreToolUse` entry with matcher `Bash` and command `rtk hook codex`, atomically and idempotently.
+- **FR-005**: Global Codex initialization MUST atomically and idempotently merge one final `PreToolUse` entry with matcher `Bash` and command `rtk hook codex`. Unrelated hooks and root data MUST remain JSON-value-equivalent, and unrelated hook groups and entries MUST retain their relative order. When RTK changes `hooks.json`, whitespace, escaping, and object-key order MAY be canonically reserialized; the pre-write backup MUST preserve the prior bytes for textual rollback.
 - **FR-006**: Hook-only initialization MUST avoid adding RTK instructions to the model context.
 - **FR-007**: Show and uninstall MUST identify or remove only RTK-owned configuration.
 - **FR-008**: Existing local Codex instruction-only initialization MUST remain compatible.
@@ -80,7 +80,7 @@ A maintainer can determine whether the Codex integration saves meaningful shell-
 ### Measurable Outcomes
 
 - **SC-001**: Every supported command in the acceptance corpus is rewritten once; every unsupported command is unchanged.
-- **SC-002**: Existing hook entries survive install/uninstall with no semantic change.
+- **SC-002**: Install and uninstall retain unrelated hook and root JSON values and the relative order of unrelated hook groups and entries. When `hooks.json` changes, the backup retains the prior bytes for textual rollback; byte identity of the rewritten configuration is not required.
 - **SC-003**: Median byte reduction is at least 30% for representative raw outputs above 1 KiB.
 - **SC-004**: No tested command loses exit status, failure identity, relevant paths, counts, or truncation recovery markers.
 - **SC-005**: Hook processing remains below the project's 10 ms startup target on the test machine.

@@ -111,3 +111,5 @@ constitution requires observed RGR, not a broken commit.
 - [x] T022 Record `c89508a` alternate-form remediation and the fixed-candidate focused check in `acceptance.md`
 - [x] T023 Add and execute a fixed-SHA semantic corpus verifier for paths, counts, truncation, recovery, and failure status
 - [x] T024 Bind the verifier to an offline build of the production SHA and reject false diff totals or irrelevant recovery files
+- [x] T025 Clarify `hooks.json` preservation as JSON values and unrelated hook order, with canonical reserialization allowed and prior bytes retained by backup
+- [x] T026 Record the symlinked-corpus verifier safety result and untouched external sentinel
