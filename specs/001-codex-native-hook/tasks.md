@@ -66,9 +66,20 @@ then accept only with measured savings and semantic evidence.
 - `e18d41c perf(registry): reduce hook startup latency` — RED: 16.247 ms
   release median; GREEN: 7.275 ms median, 8.047 ms p95, 393 registry tests,
   115 hook tests, Clippy, and format passed.
+- `7e18320 test(hook): cover every registry target` — 87/87 unique
+  registry targets exercised through the Codex payload path; 116 hook tests,
+  Clippy, format, and diff checks passed.
+- `3828682` and `d24150d` align every canonical Codex hook surface and contract
+  with native installation, Codex-owned permissions, and the detectable
+  concurrent-change boundary.
 - Evidence paths `specs/001-codex-native-hook/{acceptance.md,tasks.md}` bind
-  to production SHA `e18d41c02c3cb7d02007a23ff2ac023444930df4`.
+  to production SHA `d24150d8edada0f0241e2f640558c59978d9f7fb`.
 
 ## Phase 6: Convergence
 
 - [x] T015 Optimize lazy registry matching and retain complete rewrite behavior so release hook startup meets the below-10-ms target per SC-005 (partial)
+
+## Phase 7: Review remediation
+
+- [x] T016 Add an exhaustive Codex hook corpus test with one valid representative for every unique RTK registry target, and record its results per SC-001
+- [x] T017 Clarify the detectable concurrent-change boundary and update every canonical Codex hook document identified by review

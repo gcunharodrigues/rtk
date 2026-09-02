@@ -1,6 +1,6 @@
 # Acceptance Evidence
 
-**Production candidate**: `e18d41c02c3cb7d02007a23ff2ac023444930df4`
+**Production candidate**: `d24150d8edada0f0241e2f640558c59978d9f7fb`
 
 ## Hook and lifecycle
 
@@ -21,9 +21,10 @@
 ## Registry coverage
 
 The Codex adapter calls the same `decide_hook_action → get_rewritten →
-rewrite_command → RULES` path as Claude. `cargo test hook_cmd` passed all 115
-hook tests, and the complete suite passed the registry completeness and
-per-command rewrite tests. No Codex-specific registry exists.
+rewrite_command → RULES` path as Claude. The exhaustive Codex payload corpus
+asserted set equality and rewrote all **87/87 unique RTK targets exactly once**,
+while emitting no permission fields. `cargo test hook_cmd` passed all 116 hook
+tests. No Codex-specific registry exists.
 
 ## Byte savings
 
@@ -46,15 +47,15 @@ The initial release candidate measured 16.247 ms median and failed SC-005.
 After lazy candidate-only registry compilation, 200 release-process hook
 invocations measured **7.275 ms median** and 8.047 ms p95. SC-005 passes.
 
-## Pre-review Focused Check
+## Fixed-candidate Focused Check
 
-- Candidate: `e18d41c02c3cb7d02007a23ff2ac023444930df4`.
+- Candidate: `d24150d8edada0f0241e2f640558c59978d9f7fb`.
 - Scope: `src/main.rs`, `src/hooks/{hook_cmd,init,constants}.rs`,
   `src/discover/registry.rs`, and `hooks/codex/README.md`.
 - Consumers: Codex `PreToolUse`, CLI parsing, init/show/uninstall, shared registry.
 - Command: `cargo test codex && cargo test discover::registry::tests`.
-- Result: PASS — 20 Codex and 393 registry tests.
-- Elapsed: 0.66 seconds; slowest step: registry tests at 0.25 seconds.
+- Result: PASS — 21 Codex and 393 registry tests.
+- Elapsed: 0.70 seconds; slowest step: registry tests at 0.24 seconds.
 - Focused target: 60 seconds; met.
 
 ## Documentation Impact Classification
