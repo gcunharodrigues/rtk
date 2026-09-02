@@ -34,8 +34,8 @@
 
 - [x] T011 Run specification analysis and append any discovered work
 - [x] T012 Run Documentation Impact Classification through `okf-maintain`
-- [ ] T013 Obtain independent read-only code review of the fixed candidate
-- [ ] T014 Run the unchanged-candidate gate: `cargo fmt --all --check`, `cargo clippy --all-targets`, `cargo test --all`
+- [x] T013 Obtain independent read-only code review of the fixed candidate — PASS on `d595565342ee49eaa404a9dff356e431744e7e3c`
+- [x] T014 Run the unchanged-candidate gate: `cargo fmt --all --check && cargo clippy --all-targets -- -D warnings && cargo test --all` — PASS: 2,954 unit + 83 integration = 3,037; 8 ignored, 0 failed; `real 21.43`; slowest test target `copilot_selfheal_test` at 2.33 seconds
 
 ## Dependencies
 

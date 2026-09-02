@@ -144,6 +144,19 @@ p95 or maximum target is claimed.
   the slowest focused step was the registry suite at 0.34 seconds.
 - Focused target: 60 seconds; met.
 
+## Independent Review and Final Gate
+
+- Closed review SHA: `d595565342ee49eaa404a9dff356e431744e7e3c`.
+- Independent review: PASS.
+- Unchanged-candidate command: `/usr/bin/time -p sh -c 'cargo fmt --all --check && cargo clippy --all-targets -- -D warnings && cargo test --all'`.
+- Result: PASS — 2,954 unit tests and 83 integration tests passed (3,037 total),
+  8 ignored, 0 failed; format and Clippy passed.
+- `/usr/bin/time -p` reported `real 21.43`. The slowest test target was
+  `copilot_selfheal_test` at 2.33 seconds.
+- This section and the matching task state are evidence-only documentation
+  written after the gate; production remains
+  `e47d588c9e4dfa20df32d08fe54676d684fa6c59`.
+
 ## Documentation Impact Classification
 
 Classification: `documentation`. The owning Codex README and feature acceptance
