@@ -2509,11 +2509,7 @@ fn remove_codex_hook_entry(root: &mut serde_json::Value) -> Result<bool> {
         retained.push(entry);
     }
 
-    let became_empty = retained.is_empty();
     *pre_tool_use = retained;
-    if changed && became_empty {
-        hooks_obj.remove(PRE_TOOL_USE_KEY);
-    }
     Ok(changed)
 }
 
@@ -5956,11 +5952,48 @@ mod tests {
         });
 
         assert!(remove_codex_hook_entry(&mut root).unwrap());
-        assert!(root["hooks"].get(PRE_TOOL_USE_KEY).is_none());
+        assert_eq!(root["hooks"][PRE_TOOL_USE_KEY], serde_json::json!([]));
         assert_eq!(
             root["hooks"]["PostToolUse"],
             serde_json::json!([{ "matcher": "Edit", "hooks": [] }])
         );
+    }
+
+    #[test]
+    fn test_codex_hook_install_uninstall_preserves_empty_container_and_unrelated_values() {
+        let temp = TempDir::new().unwrap();
+        let hooks_json = temp.path().join(HOOKS_JSON);
+        let original = serde_json::json!({
+            "model": "custom",
+            "hooks": {
+                "PostToolUse": [
+                    { "matcher": "Edit", "hooks": [{ "type": "command", "command": "post-edit" }] },
+                    { "matcher": "Write", "hooks": [{ "type": "command", "command": "post-write" }] }
+                ],
+                "PreToolUse": [],
+                "Notification": [{ "matcher": "Task", "hooks": [] }]
+            },
+            "metadata": { "keep": ["first", "second"] }
+        });
+        let original_bytes = serde_json::to_vec_pretty(&original).unwrap();
+        fs::write(&hooks_json, &original_bytes).unwrap();
+
+        run_codex_mode_with_paths_and_options(
+            temp.path().join(AGENTS_MD),
+            temp.path().join(RTK_MD),
+            Some(hooks_json.clone()),
+            true,
+            true,
+            InitContext::default(),
+        )
+        .unwrap();
+        let installed: serde_json::Value =
+            serde_json::from_slice(&fs::read(&hooks_json).unwrap()).unwrap();
+        assert_eq!(installed["hooks"]["PreToolUse"][0], codex_hook_entry());
+
+        let removed = uninstall_codex_at(temp.path(), InitContext::default()).unwrap();
+        assert_eq!(removed, vec!["hooks.json: removed RTK hook entry"]);
+        assert_eq!(fs::read(&hooks_json).unwrap(), original_bytes);
     }
 
     #[test]
