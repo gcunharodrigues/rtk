@@ -31,5 +31,7 @@ Input above 1 MiB follows the same successful, empty passthrough behavior.
 - `rtk init -g --uninstall --codex`: remove only owned surfaces.
 
 The installed hook matcher is `Bash`, command is `rtk hook codex`, and timeout
-is 5 seconds. A detected concurrent change aborts the write without modifying
-the target.
+is 5 seconds. At final pre-write snapshot verification, a source difference
+aborts without changing the target. After that verification, RTK atomically
+replaces the target. `hooks.json` has no cooperative lock or compare-and-swap,
+so an uncooperative writer after the check is outside this protection.
