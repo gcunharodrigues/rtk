@@ -2411,8 +2411,8 @@ fn is_codex_hook(hook: &serde_json::Value) -> bool {
 /// Remove exact RTK commands and append one canonical Codex hook entry.
 ///
 /// Existing hook groups and all non-RTK hook objects retain their order and
-/// values. A group that contained only RTK entries is dropped; mixed groups
-/// remain with their user hooks intact.
+/// values. Only RTK's canonical group is dropped; mixed or metadata-bearing
+/// groups remain with their user-owned values intact.
 fn merge_codex_hook_entry(root: &mut serde_json::Value) -> Result<bool> {
     let root_obj = root
         .as_object_mut()
@@ -2428,9 +2428,11 @@ fn merge_codex_hook_entry(root: &mut serde_json::Value) -> Result<bool> {
         .as_array_mut()
         .context("Codex hooks.json 'PreToolUse' value must be an array")?;
 
+    let canonical = codex_hook_entry();
     let original = std::mem::take(pre_tool_use);
     let mut retained = Vec::with_capacity(original.len() + 1);
     for mut entry in original.iter().cloned() {
+        let owned = entry == canonical;
         let mut removed = false;
         if let Some(hooks) = entry
             .get_mut("hooks")
@@ -2441,7 +2443,8 @@ fn merge_codex_hook_entry(root: &mut serde_json::Value) -> Result<bool> {
             removed = hooks.len() != before;
         }
 
-        if removed
+        if owned
+            && removed
             && entry
                 .get("hooks")
                 .and_then(|value| value.as_array())
@@ -2451,7 +2454,7 @@ fn merge_codex_hook_entry(root: &mut serde_json::Value) -> Result<bool> {
         }
         retained.push(entry);
     }
-    retained.push(codex_hook_entry());
+    retained.push(canonical);
 
     let changed = retained != original;
     *pre_tool_use = retained;
@@ -2476,10 +2479,12 @@ fn remove_codex_hook_entry(root: &mut serde_json::Value) -> Result<bool> {
         .as_array_mut()
         .context("Codex hooks.json 'PreToolUse' value must be an array")?;
 
+    let canonical = codex_hook_entry();
     let original = std::mem::take(pre_tool_use);
     let mut retained = Vec::with_capacity(original.len());
     let mut changed = false;
     for mut entry in original {
+        let owned = entry == canonical;
         let mut removed = false;
         if let Some(hooks) = entry
             .get_mut("hooks")
@@ -2492,10 +2497,11 @@ fn remove_codex_hook_entry(root: &mut serde_json::Value) -> Result<bool> {
 
         if removed {
             changed = true;
-            if entry
-                .get("hooks")
-                .and_then(|value| value.as_array())
-                .is_some_and(Vec::is_empty)
+            if owned
+                && entry
+                    .get("hooks")
+                    .and_then(|value| value.as_array())
+                    .is_some_and(Vec::is_empty)
             {
                 continue;
             }
@@ -2505,7 +2511,7 @@ fn remove_codex_hook_entry(root: &mut serde_json::Value) -> Result<bool> {
 
     let became_empty = retained.is_empty();
     *pre_tool_use = retained;
-    if became_empty {
+    if changed && became_empty {
         hooks_obj.remove(PRE_TOOL_USE_KEY);
     }
     Ok(changed)
@@ -5860,10 +5866,7 @@ mod tests {
                             { "type": "command", "command": "user-hook" }
                         ]
                     },
-                    {
-                        "matcher": "Bash",
-                        "hooks": [{ "type": "command", "command": CODEX_HOOK_COMMAND }]
-                    }
+                    codex_hook_entry()
                 ],
                 "PostToolUse": [{ "matcher": "Edit", "hooks": [] }]
             },
@@ -5899,6 +5902,121 @@ mod tests {
     }
 
     #[test]
+    fn test_codex_hook_metadata_group_survives_install_and_uninstall() {
+        let metadata_group = serde_json::json!({
+            "matcher": "Bash",
+            "label": "user-owned",
+            "hooks": [{
+                "type": "command",
+                "command": CODEX_HOOK_COMMAND,
+                "timeout": CODEX_HOOK_TIMEOUT
+            }]
+        });
+        let mut root = serde_json::json!({
+            "hooks": { "PreToolUse": [metadata_group] }
+        });
+
+        assert!(merge_codex_hook_entry(&mut root).unwrap());
+        assert_eq!(
+            root["hooks"]["PreToolUse"],
+            serde_json::json!([
+                { "matcher": "Bash", "label": "user-owned", "hooks": [] },
+                codex_hook_entry()
+            ])
+        );
+
+        assert!(remove_codex_hook_entry(&mut root).unwrap());
+        assert_eq!(
+            root["hooks"]["PreToolUse"],
+            serde_json::json!([
+                { "matcher": "Bash", "label": "user-owned", "hooks": [] }
+            ])
+        );
+    }
+
+    #[test]
+    fn test_codex_hook_uninstall_preserves_preexisting_empty_container() {
+        let mut root = serde_json::json!({
+            "hooks": { "PreToolUse": [] },
+            "keep": true
+        });
+        let original = root.clone();
+
+        assert!(!remove_codex_hook_entry(&mut root).unwrap());
+        assert_eq!(root, original);
+    }
+
+    #[test]
+    fn test_codex_hook_uninstall_removes_canonical_owned_container() {
+        let mut root = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [codex_hook_entry()],
+                "PostToolUse": [{ "matcher": "Edit", "hooks": [] }]
+            }
+        });
+
+        assert!(remove_codex_hook_entry(&mut root).unwrap());
+        assert!(root["hooks"].get(PRE_TOOL_USE_KEY).is_none());
+        assert_eq!(
+            root["hooks"]["PostToolUse"],
+            serde_json::json!([{ "matcher": "Edit", "hooks": [] }])
+        );
+    }
+
+    #[test]
+    fn test_codex_hook_mixed_groups_retain_order_and_values() {
+        let mut root = serde_json::json!({
+            "hooks": { "PreToolUse": [
+                {
+                    "matcher": "Read",
+                    "metadata": { "rank": 1 },
+                    "hooks": [{ "type": "command", "command": "first", "timeout": 7 }]
+                },
+                codex_hook_entry(),
+                {
+                    "matcher": "Bash",
+                    "label": "mixed",
+                    "hooks": [
+                        { "type": "command", "command": CODEX_HOOK_COMMAND },
+                        { "type": "command", "command": "middle", "custom": true }
+                    ]
+                },
+                {
+                    "matcher": "Bash",
+                    "label": "metadata-only",
+                    "hooks": [{ "command": CODEX_HOOK_COMMAND }]
+                },
+                { "matcher": "Write", "disabled": true, "hooks": [] }
+            ] }
+        });
+        let user_groups = serde_json::json!([
+            {
+                "matcher": "Read",
+                "metadata": { "rank": 1 },
+                "hooks": [{ "type": "command", "command": "first", "timeout": 7 }]
+            },
+            {
+                "matcher": "Bash",
+                "label": "mixed",
+                "hooks": [{ "type": "command", "command": "middle", "custom": true }]
+            },
+            { "matcher": "Bash", "label": "metadata-only", "hooks": [] },
+            { "matcher": "Write", "disabled": true, "hooks": [] }
+        ]);
+
+        assert!(merge_codex_hook_entry(&mut root).unwrap());
+        let mut installed = user_groups.as_array().unwrap().clone();
+        installed.push(codex_hook_entry());
+        assert_eq!(
+            root["hooks"][PRE_TOOL_USE_KEY],
+            serde_json::Value::Array(installed)
+        );
+
+        assert!(remove_codex_hook_entry(&mut root).unwrap());
+        assert_eq!(root["hooks"][PRE_TOOL_USE_KEY], user_groups);
+    }
+
+    #[test]
     fn test_codex_hook_uninstall_preserves_mixed_user_group() {
         let mut root = serde_json::json!({
             "hooks": {
@@ -5910,10 +6028,7 @@ mod tests {
                             { "type": "command", "command": CODEX_HOOK_COMMAND }
                         ]
                     },
-                    {
-                        "matcher": "Bash",
-                        "hooks": [{ "type": "command", "command": CODEX_HOOK_COMMAND }]
-                    }
+                    codex_hook_entry()
                 ],
                 "PostToolUse": [{ "matcher": "Edit", "hooks": [] }]
             }
