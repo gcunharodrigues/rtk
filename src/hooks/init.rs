@@ -397,17 +397,28 @@ fn write_if_changed(path: &Path, content: &str, name: &str, ctx: InitContext) ->
     }
 }
 
-/// Resolve the final write target: if `path` is a symlink, follow it so
-/// the atomic rename lands on the real file and the symlink is preserved.
-fn resolve_atomic_target(path: &Path) -> PathBuf {
-    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+/// Resolve the final write target, preserving valid symlinks and rejecting dangling ones.
+fn resolve_atomic_target(path: &Path) -> Result<PathBuf> {
+    match fs::canonicalize(path) {
+        Ok(target) => Ok(target),
+        Err(error) => match fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => Err(error)
+                .with_context(|| format!("Failed to resolve symlink target: {}", path.display())),
+            Ok(_) => Ok(path.to_path_buf()),
+            Err(metadata_error) if metadata_error.kind() == std::io::ErrorKind::NotFound => {
+                Ok(path.to_path_buf())
+            }
+            Err(metadata_error) => Err(metadata_error)
+                .with_context(|| format!("Failed to inspect write path: {}", path.display())),
+        },
+    }
 }
 
 /// Atomic write using tempfile + rename
 /// Prevents corruption on crash/interrupt
 /// Follows symlinks so the link itself is preserved.
 fn atomic_write(path: &Path, content: &str) -> Result<()> {
-    let target = resolve_atomic_target(path);
+    let target = resolve_atomic_target(path)?;
     let parent = target.parent().with_context(|| {
         format!(
             "Cannot write to {}: path has no parent directory",
@@ -2561,8 +2572,23 @@ fn codex_backup_path(path: &Path) -> PathBuf {
     path.with_extension("json.bak")
 }
 
+/// Reject backup symlinks before `fs::copy`, which follows its destination.
+fn reject_symlink(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            anyhow::bail!("Refusing to overwrite symlink: {}", path.display())
+        }
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => {
+            Err(error).with_context(|| format!("Failed to inspect path: {}", path.display()))
+        }
+    }
+}
+
 fn patch_codex_hooks_json(path: &Path, ctx: InitContext) -> Result<bool> {
     let InitContext { verbose, dry_run } = ctx;
+    resolve_atomic_target(path)?;
     let (snapshot, mut root) = read_codex_hooks_snapshot(path)?;
     if !merge_codex_hook_entry(&mut root)? {
         if verbose > 0 {
@@ -2584,6 +2610,7 @@ fn patch_codex_hooks_json(path: &Path, ctx: InitContext) -> Result<bool> {
     ensure_codex_snapshot_unchanged(path, snapshot.as_deref())?;
     if snapshot.is_some() {
         let backup_path = codex_backup_path(path);
+        reject_symlink(&backup_path)?;
         fs::copy(path, &backup_path)
             .with_context(|| format!("Failed to backup to {}", backup_path.display()))?;
         if verbose > 0 {
@@ -2597,6 +2624,7 @@ fn patch_codex_hooks_json(path: &Path, ctx: InitContext) -> Result<bool> {
 
 fn remove_codex_hooks_json(path: &Path, ctx: InitContext) -> Result<bool> {
     let InitContext { verbose, dry_run } = ctx;
+    resolve_atomic_target(path)?;
     let (snapshot, mut root) = read_codex_hooks_snapshot(path)?;
     let Some(snapshot) = snapshot else {
         return Ok(false);
@@ -2620,6 +2648,7 @@ fn remove_codex_hooks_json(path: &Path, ctx: InitContext) -> Result<bool> {
 
     ensure_codex_snapshot_unchanged(path, Some(&snapshot))?;
     let backup_path = codex_backup_path(path);
+    reject_symlink(&backup_path)?;
     fs::copy(path, &backup_path)
         .with_context(|| format!("Failed to backup to {}", backup_path.display()))?;
     let serialized =
@@ -6146,6 +6175,76 @@ mod tests {
             .to_string()
             .contains("changed while it was being updated"));
         assert_eq!(fs::read_to_string(&path).unwrap(), "after");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_codex_hook_install_rejects_valid_symlink_backup_without_changes() {
+        use std::os::unix::fs::symlink;
+
+        let temp = TempDir::new().unwrap();
+        let hooks_json = temp.path().join(HOOKS_JSON);
+        let backup_path = codex_backup_path(&hooks_json);
+        let sentinel_path = temp.path().join("sentinel");
+        let original = br#"{"hooks":{"PreToolUse":[]}}"#;
+
+        fs::write(&hooks_json, original).unwrap();
+        fs::write(&sentinel_path, b"sentinel").unwrap();
+        symlink(&sentinel_path, &backup_path).unwrap();
+
+        let error = patch_codex_hooks_json(&hooks_json, InitContext::default()).unwrap_err();
+
+        assert!(error.to_string().contains("symlink"));
+        assert_eq!(fs::read(&hooks_json).unwrap(), original);
+        assert_eq!(fs::read(&sentinel_path).unwrap(), b"sentinel");
+        assert_eq!(fs::read_link(&backup_path).unwrap(), sentinel_path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_codex_hook_uninstall_rejects_broken_symlink_backup_without_changes() {
+        use std::os::unix::fs::symlink;
+
+        let temp = TempDir::new().unwrap();
+        let hooks_json = temp.path().join(HOOKS_JSON);
+        let backup_path = codex_backup_path(&hooks_json);
+        let missing_sentinel = temp.path().join("missing-sentinel");
+        let original = serde_json::to_vec(&serde_json::json!({
+            "hooks": { "PreToolUse": [codex_hook_entry()] }
+        }))
+        .unwrap();
+
+        fs::write(&hooks_json, &original).unwrap();
+        symlink(&missing_sentinel, &backup_path).unwrap();
+
+        let error = remove_codex_hooks_json(&hooks_json, InitContext::default()).unwrap_err();
+
+        assert!(error.to_string().contains("symlink"));
+        assert_eq!(fs::read(&hooks_json).unwrap(), original);
+        assert!(!missing_sentinel.exists());
+        assert_eq!(fs::read_link(&backup_path).unwrap(), missing_sentinel);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_codex_hook_install_rejects_broken_hooks_symlink_without_substitution() {
+        use std::os::unix::fs::symlink;
+
+        let temp = TempDir::new().unwrap();
+        let hooks_json = temp.path().join(HOOKS_JSON);
+        let missing_hooks = temp.path().join("missing-hooks.json");
+
+        symlink(&missing_hooks, &hooks_json).unwrap();
+
+        let error = patch_codex_hooks_json(&hooks_json, InitContext::default()).unwrap_err();
+
+        assert!(error.to_string().contains("symlink"));
+        assert!(fs::symlink_metadata(&hooks_json)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read_link(&hooks_json).unwrap(), missing_hooks);
+        assert!(!missing_hooks.exists());
     }
 
     #[test]
