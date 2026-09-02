@@ -18,7 +18,7 @@ from pathlib import Path
 
 
 BASE = "9cdf66f805adc7a710a4f517a2829fae96c49525"
-PRODUCTION = "c89508aba6676ecd0f034895dea70f385110adad"
+PRODUCTION = "02dc193366da87238c331906a05b5b8e54291dcc"
 RANGE = f"{BASE}..{PRODUCTION}"
 ROOT = Path(__file__).resolve().parents[2]
 CORPUS = ROOT / "target" / "codex-corpus"
