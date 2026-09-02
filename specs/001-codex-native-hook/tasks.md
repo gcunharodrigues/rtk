@@ -87,8 +87,12 @@ constitution requires observed RGR, not a broken commit.
 - `02dc193 fix(codex): preserve hook group metadata` — GREEN: metadata, empty
   containers, relative order, and exact owned-container removal tests passed;
   fixed-candidate check passed 28 Codex, 394 registry, 118 hook, and 199 init tests.
+- `dcd395d fix(codex): preserve empty hook container` — GREEN: pre-existing
+  empty `PreToolUse` survives install/uninstall; fixed-candidate check passed 29
+  Codex, 394 registry, 118 hook, and 200 init tests. The slowest focused step was
+  the registry suite at 0.458 seconds.
 - Evidence paths `specs/001-codex-native-hook/{acceptance.md,tasks.md}` bind
-  to production SHA `02dc193366da87238c331906a05b5b8e54291dcc`.
+  to production SHA `dcd395d5ab70c42a186b161243c6bb6434430aab`.
 
 ## Phase 6: Convergence
 
@@ -117,3 +121,4 @@ constitution requires observed RGR, not a broken commit.
 - [x] T025 Clarify `hooks.json` preservation as JSON values and unrelated hook order, with canonical reserialization allowed and prior bytes retained by backup
 - [x] T026 Record the symlinked-corpus verifier safety result and untouched external sentinel
 - [x] T027 Rebind corpus, latency, and focused evidence to the metadata-preserving production SHA
+- [x] T028 Preserve a pre-existing empty `PreToolUse` container across install/uninstall and rebind evidence to that production SHA

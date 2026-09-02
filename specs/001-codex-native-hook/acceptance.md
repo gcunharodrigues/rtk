@@ -1,6 +1,10 @@
 # Acceptance Evidence
 
-**Production candidate**: `02dc193366da87238c331906a05b5b8e54291dcc`
+**Production candidate**: `dcd395d5ab70c42a186b161243c6bb6434430aab`
+
+The only changes after this production SHA are the verifier rebind and this
+feature evidence. The verifier rebuilds the production SHA instead of trusting
+`HEAD`.
 
 ## Hook and lifecycle
 
@@ -50,6 +54,7 @@ reproducible measurements.
 | Permission and status (`9838e31`) | Claude deny suppressed Codex rewrite; malformed hook reported healthy. | `cargo test test_codex_rewrite_ignores_claude_deny_rules -- --nocapture`; `cargo test test_codex_hook_status_requires_one_canonical_final_entry -- --nocapture`. Recorded fixed-candidate evidence: 23 Codex tests, Clippy, format, and diff checks passed. |
 | Alternate forms (`c89508a`) | `cargo test test_rewrite_supported_alternate_forms -- --nocapture`; `cargo test test_codex_rewrites_supported_alternate_forms -- --nocapture` — expected alternate forms did not rewrite. | Both tests passed; that candidate's focused check passed 24 Codex, 394 registry, and 118 hook tests. |
 | Group preservation (`02dc193`) | Metadata-only and pre-existing-empty-container tests failed. | 14 focused lifecycle tests passed; the fixed-candidate check below passed 28 Codex, 394 registry, 118 hook, and 199 init tests. |
+| Empty-container round trip (`dcd395d`) | Install followed by uninstall removed a pre-existing empty `PreToolUse` array. | The canonical test and a dedicated install/uninstall round-trip test passed; the fixed-candidate check below passed 29 Codex, 394 registry, 118 hook, and 200 init tests. |
 
 `git diff --check` was the recorded diff check. The final full-suite task remains
 unchecked in [tasks.md](tasks.md); no final-suite result is claimed here.
@@ -58,7 +63,7 @@ unchecked in [tasks.md](tasks.md); no final-suite result is claimed here.
 
 **Machine**: `Guilhermes-Air`; `macOS-26.6.2-arm64-arm-64bit-Mach-O`.
 
-Build `02dc193366da87238c331906a05b5b8e54291dcc` with `cargo build --release`.
+Build `dcd395d5ab70c42a186b161243c6bb6434430aab` with `cargo build --release --offline`.
 Each command ran with `subprocess.run(..., capture_output=True)`; bytes are
 `stdout + stderr`, and the exit status is retained, including expected failure.
 The committed fixture is `fixtures/failing-rust/`. The method cleans distinct
@@ -66,10 +71,10 @@ raw and filtered `CARGO_TARGET_DIR` paths before measuring.
 
 | Case | Raw command | Filtered command | Raw / filtered bytes | Reduction | Status |
 |---|---|---|---:|---:|---:|
-| Git log | fixed-range `git log --stat --oneline` | isolated production build: `rtk git log --stat --oneline` | 5,982 / 5,982 | 0.0% | 0 |
-| Git diff | fixed-range `git diff` | isolated production build: `rtk git diff` | 129,638 / 35,726 | 72.4% | 0 |
+| Git log | fixed-range `git log --stat --oneline` | isolated production build: `rtk git log --stat --oneline` | 6,544 / 6,544 | 0.0% | 0 |
+| Git diff | fixed-range `git diff` | isolated production build: `rtk git diff` | 131,417 / 35,666 | 72.9% | 0 |
 | File listing | `find src docs hooks specs -type f` | isolated production build: `rtk find src docs hooks specs -type f` | 7,160 / 1,249 | 82.6% | 0 |
-| Text search | `rg -n test src` | isolated production build: `rtk rg -n test src` | 600,531 / 12,864 | 97.9% | 0 |
+| Text search | `rg -n test src` | isolated production build: `rtk rg -n test src` | 600,681 / 12,864 | 97.9% | 0 |
 | Failing Rust test | isolated fixture `cargo test --verbose` | isolated production build: `rtk cargo test --verbose` | 2,315 / 503 | 78.3% | 101 |
 
 The executable comparator is:
@@ -78,7 +83,7 @@ The executable comparator is:
 python3 specs/001-codex-native-hook/verify_acceptance.py
 ```
 
-It reconstructs `02dc193` with `git archive`, builds that tree offline, and runs
+It reconstructs `dcd395d` with `git archive`, builds that tree offline, and runs
 the corpus there. It returned `ok: true` and **78.3% median reduction**. Its
 case-specific assertions proved: equal commit count and log output; every
 changed diff path plus exact file/insertion/deletion totals; exact file and
@@ -118,19 +123,21 @@ samples = sorted(run() for _ in range(200))
 print(statistics.median(samples), samples[189], samples[-1])
 ```
 
-For `02dc193366da87238c331906a05b5b8e54291dcc`, the recorded median was
-**8.283 ms**, p95 **9.879 ms**, maximum **11.049 ms**. The acceptance target
-is median < 10 ms; no p95 target is claimed.
+For `dcd395d5ab70c42a186b161243c6bb6434430aab`, the recorded median was
+**8.097 ms**, p95 **9.460 ms**, maximum **95.471 ms**. The timing data does not
+establish the cause of the maximum. The acceptance target is median < 10 ms; no
+p95 or maximum target is claimed.
 
 ## Fixed-candidate Focused Check
 
-- Candidate: `02dc193366da87238c331906a05b5b8e54291dcc`.
+- Candidate: `dcd395d5ab70c42a186b161243c6bb6434430aab`.
 - Scope: `src/main.rs`, `src/hooks/{hook_cmd,init,constants,permissions}.rs`,
   `src/discover/{registry,rules}.rs`, and `hooks/codex/README.md`.
 - Consumers: Codex `PreToolUse`, CLI parsing, init/show/uninstall, shared registry.
 - Command: `cargo test codex && cargo test discover::registry::tests && cargo test hooks::hook_cmd::tests && cargo test hooks::init::tests`.
-- Result: PASS — 28 Codex, 394 registry, 118 hook, and 199 init tests.
-- Elapsed: 1.28 seconds.
+- Result: PASS — 29 Codex, 394 registry, 118 hook, and 200 init tests.
+- Individual elapsed: 0.350, 0.458, 0.240, and 0.222 seconds respectively;
+  the slowest focused step was the registry suite at 0.458 seconds.
 - Focused target: 60 seconds; met.
 
 ## Documentation Impact Classification
