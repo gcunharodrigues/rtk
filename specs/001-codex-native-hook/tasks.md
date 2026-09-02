@@ -57,6 +57,11 @@ then accept only with measured savings and semantic evidence.
 
 ## Execution Evidence
 
+Every RED observation below occurred in an uncommitted worker state before its
+logical GREEN commit. No immutable RED tree or transcript was retained; the
+historical commands/results cannot be rerun from the named GREEN commits. The
+constitution requires observed RGR, not a broken commit.
+
 - `6e2e157 feat(hook): add native Codex command rewrite` — RED: missing
   `run_codex_inner`/`HookCommands::Codex`; GREEN: 13 Codex tests, 115 hook
   tests, Clippy, format, and 2,933 repository tests passed.
@@ -76,8 +81,11 @@ then accept only with measured savings and semantic evidence.
   Claude deny suppressed Codex rewrite and malformed hook reported healthy;
   GREEN: both regressions fixed, 23 Codex tests, Clippy, format, and diff checks
   passed.
+- `c89508a fix(registry): rewrite supported alternate forms` — GREEN: shared
+  registry and Codex payload alternate-form tests passed; final focused check
+  passed 24 Codex, 394 registry, and 118 hook tests in 6.59 seconds.
 - Evidence paths `specs/001-codex-native-hook/{acceptance.md,tasks.md}` bind
-  to production SHA `daae1bfff06e5bf0f67068372c4f6cf02d68d9dd`.
+  to production SHA `c89508aba6676ecd0f034895dea70f385110adad`.
 
 ## Phase 6: Convergence
 
@@ -97,6 +105,7 @@ then accept only with measured savings and semantic evidence.
 
 - [x] T020 Replace remaining Codex prompt-only guidance with global `PreToolUse` installation (`rtk init -g --codex`, optional `--hook-only`, `Bash` → `rtk hook codex`), Codex-owned approval, and local awareness-only mode
 
-## Phase 10: Evidence reproducibility
+## Phase 10: Reproducible corpus and latency evidence
 
-- [x] T021 Bind the production candidate, commit the failing Rust fixture, and record exact production, corpus, and latency commands in `acceptance.md`
+- [x] T021 Bind the production candidate, commit the failing Rust fixture, and record fixed-SHA corpus and latency measurement methods in `acceptance.md`
+- [x] T022 Record `c89508a` alternate-form remediation and the fixed-candidate focused check in `acceptance.md`

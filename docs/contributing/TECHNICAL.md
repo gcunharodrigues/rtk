@@ -70,20 +70,24 @@ This is the full lifecycle of a command through RTK, from LLM agent to filtered 
 
 ### 3.1 Hook Installation (`rtk init`)
 
-The user runs `rtk init` to set up hooks for their LLM agent. This:
+The user runs `rtk init` to set up hooks for their LLM agent. Depending on the
+adapter, this:
 
-1. Writes a thin shell hook script (e.g., `~/.claude/hooks/rtk-rewrite.sh`)
+1. Writes a thin shell hook script (e.g., `~/.claude/hooks/rtk-rewrite.sh`) or
+   registers a native RTK subcommand
 2. Stores its SHA-256 hash for integrity verification
 3. Patches the agent's settings file (e.g., `settings.json`) to register the hook
 4. Writes RTK awareness instructions (e.g., `RTK.md`) for prompt-level guidance
 
-RTK supports 7 agents, each with its own installation mode. The hook scripts are embedded in the binary and written at install time.
+RTK supports 7 agents, each with its own installation mode. Shell-hook scripts
+are embedded in the binary and written at install time; native adapters configure
+an RTK subcommand instead.
 
 > **Details**: [`src/hooks/README.md`](../src/hooks/README.md) covers all installation modes, configuration files, and the uninstall flow.
 
 ### 3.2 Hook Interception (Command Rewriting)
 
-When an LLM agent runs a command (e.g., `git status`):
+For shell-hook adapters, when an LLM agent runs a command (e.g., `git status`):
 
 1. The agent fires a `PreToolUse` event (or equivalent) containing the command as JSON
 2. The hook script reads the JSON, extracts the command string
@@ -92,13 +96,17 @@ When an LLM agent runs a command (e.g., `git status`):
 5. The hook sends a response telling the agent to use the rewritten command
 6. If anything fails (jq missing, rtk not found, no match), the hook exits silently -- the raw command runs unchanged
 
-All rewrite logic lives in Rust (`src/discover/registry.rs`). Hooks are thin delegates that handle agent-specific JSON formats.
+All rewrite logic lives in Rust (`src/discover/registry.rs`). Shell hooks are
+thin delegates that handle agent-specific JSON formats. Native Codex
+`rtk hook codex` calls the shared registry in-process and emits `updatedInput`;
+it does not invoke `rtk rewrite`.
 
 > **Details**: [`hooks/README.md`](../hooks/README.md) covers each agent's JSON format, the rewrite registry, compound command handling, and the `RTK_DISABLED` override.
 
-#### Rewrite Pipeline
+#### Shell Rewrite Pipeline
 
-The rewrite pipeline is how RTK intercepts and rewrites commands. The call chain is:
+The shell rewrite pipeline has this call chain. Codex instead uses `rtk hook
+codex` → shared registry in-process → `updatedInput`.
 
 ```
 hook shell → rewrite_cmd.rs → rewrite_command() → rewrite_compound() → rewrite_segment() → classify_command()

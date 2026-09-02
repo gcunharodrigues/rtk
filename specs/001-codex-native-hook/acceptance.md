@@ -1,6 +1,6 @@
 # Acceptance Evidence
 
-**Production candidate**: `daae1bfff06e5bf0f67068372c4f6cf02d68d9dd`
+**Production candidate**: `c89508aba6676ecd0f034895dea70f385110adad`
 
 ## Hook and lifecycle
 
@@ -27,12 +27,16 @@ The Codex adapter uses permission-neutral `decide_from_verdict(Default) →
 get_rewritten → rewrite_command → RULES`. The exhaustive Codex payload corpus
 asserted set equality and rewrote all **87/87 unique RTK targets exactly once**,
 while emitting no permission fields; Codex owns approval. `cargo test hook_cmd`
-passed all 117 hook tests. No Codex-specific registry exists.
+passed all 118 hook tests. No Codex-specific registry exists.
 
 ## Recorded production checks
 
-These are recorded commands and results, not a claim that a new checkout will
-reproduce historical timings or test counts.
+These are recorded commands and results. Every RED observation occurred in an
+uncommitted worker state before its logical GREEN commit. No immutable RED tree
+or transcript was retained, so the historical commands and results cannot be
+rerun from the named GREEN commits. The constitution requires observed RGR, not
+a broken commit. Only the fixed-SHA corpus and latency methods below are
+reproducible measurements.
 
 | Change | RED | GREEN / refactor |
 |---|---|---|
@@ -40,6 +44,7 @@ reproduce historical timings or test counts.
 | Lifecycle (`cb3a5ca`) | `cargo test codex_hook -- --nocapture` — missing `CODEX_HOOK_COMMAND` / merge. | `cargo test codex_hook -- --nocapture` — 9 lifecycle tests; `cargo test hooks::init::tests -- --nocapture` — 193 init tests. |
 | Latency refactor (`e18d41c`) | The latency runner below, built from `cb3a5ca8c96d22d6cbb6bf65b4aa51243ff763e5`: 16.247 ms median. | The same runner, built from `e18d41c02c3cb7d02007a23ff2ac023444930df4`: 7.275 ms median and 8.047 ms p95; `cargo test test_candidate_prefilter_preserves_last_match -- --nocapture`. |
 | Permission and status (`9838e31`) | Claude deny suppressed Codex rewrite; malformed hook reported healthy. | `cargo test test_codex_rewrite_ignores_claude_deny_rules -- --nocapture`; `cargo test test_codex_hook_status_requires_one_canonical_final_entry -- --nocapture`. Recorded fixed-candidate evidence: 23 Codex tests, Clippy, format, and diff checks passed. |
+| Alternate forms (`c89508a`) | `cargo test test_rewrite_supported_alternate_forms -- --nocapture`; `cargo test test_codex_rewrites_supported_alternate_forms -- --nocapture` — expected alternate forms did not rewrite. | Both tests passed. The final focused check below passed 24 Codex, 394 registry, and 118 hook tests. |
 
 `git diff --check` was the recorded diff check. The final full-suite task remains
 unchecked in [tasks.md](tasks.md); no final-suite result is claimed here.
@@ -48,22 +53,22 @@ unchecked in [tasks.md](tasks.md); no final-suite result is claimed here.
 
 **Machine**: `Guilhermes-Air`; `macOS-26.6.2-arm64-arm-64bit-Mach-O`.
 
-Build the candidate with `cargo build --release`. Each command ran with
-`subprocess.run(..., capture_output=True)`; bytes are `stdout + stderr`, and
-the exit status is retained, including expected failure. The committed fixture
-is `fixtures/failing-rust/`. Start both distinct `CARGO_TARGET_DIR` paths
-empty so raw and filtered runs do not share build output.
+Build `c89508aba6676ecd0f034895dea70f385110adad` with `cargo build --release`.
+Each command ran with `subprocess.run(..., capture_output=True)`; bytes are
+`stdout + stderr`, and the exit status is retained, including expected failure.
+The committed fixture is `fixtures/failing-rust/`. The method cleans distinct
+raw and filtered `CARGO_TARGET_DIR` paths before measuring.
 
 | Case | Raw command | Filtered command | Raw / filtered bytes | Reduction | Status |
 |---|---|---|---:|---:|---:|
-| Git log | `git log --all --stat --oneline` | `./target/release/rtk git log --all --stat --oneline` | 469,993 / 469,993 | 0.0% | 0 |
-| Git diff | `git diff 9cdf66f805adc7a710a4f517a2829fae96c49525..daae1bfff06e5bf0f67068372c4f6cf02d68d9dd` | `./target/release/rtk git diff 9cdf66f805adc7a710a4f517a2829fae96c49525..daae1bfff06e5bf0f67068372c4f6cf02d68d9dd` | 81,604 / 31,346 | 61.6% | 0 |
-| File listing | `find . -type f` | `./target/release/rtk find . -type f` | 1,579,896 / 1,057 | 99.9% | 0 |
-| Text search | `rg -n test src` | `./target/release/rtk rg -n test src` | 599,036 / 12,656 | 97.9% | 0 |
-| Failing Rust test | `CARGO_TARGET_DIR=target/codex-corpus/raw cargo test --manifest-path specs/001-codex-native-hook/fixtures/failing-rust/Cargo.toml` | `CARGO_TARGET_DIR=target/codex-corpus/filtered ./target/release/rtk cargo test --manifest-path specs/001-codex-native-hook/fixtures/failing-rust/Cargo.toml` | 2,344 / 477 | 79.7% | 101 |
+| Git log | `git log --stat --oneline 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | `./target/release/rtk git log --stat --oneline 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | 4,108 / 4,108 | 0.0% | 0 |
+| Git diff | `git diff 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | `./target/release/rtk git diff 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | 95,006 / 34,054 | 64.2% | 0 |
+| File listing | `find src docs hooks specs -type f` | `./target/release/rtk find src docs hooks specs -type f` | 7,050 / 1,223 | 82.7% | 0 |
+| Text search | `rg -n test src` | `./target/release/rtk rg -n test src` | 600,016 / 12,656 | 97.9% | 0 |
+| Failing Rust test | `CARGO_TARGET_DIR=target/codex-corpus/raw cargo test --verbose --manifest-path specs/001-codex-native-hook/fixtures/failing-rust/Cargo.toml` | `CARGO_TARGET_DIR=target/codex-corpus/filtered ./target/release/rtk cargo test --verbose --manifest-path specs/001-codex-native-hook/fixtures/failing-rust/Cargo.toml` | 2,277 / 477 | 79.1% | 101 |
 
 The failing case retained `preserves_failure_details`; `0 passed; 1 failed`.
-Median: **79.7%**. The values are the recorded result for the named machine
+Median: **79.1%**. The values are the recorded result for the named machine
 and candidate, not a cross-machine byte-for-byte threshold.
 
 ```python
@@ -73,16 +78,18 @@ def measure(command, env=None):
     run = subprocess.run(command, capture_output=True, env=env)
     return len(run.stdout) + len(run.stderr), run.returncode
 
-base = "9cdf66f805adc7a710a4f517a2829fae96c49525..daae1bfff06e5bf0f67068372c4f6cf02d68d9dd"
+base = "9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad"
 fixture = "specs/001-codex-native-hook/fixtures/failing-rust/Cargo.toml"
 raw_env = {**os.environ, "CARGO_TARGET_DIR": "target/codex-corpus/raw"}
 rtk_env = {**os.environ, "CARGO_TARGET_DIR": "target/codex-corpus/filtered"}
+for env in (raw_env, rtk_env):
+    subprocess.run(["cargo", "clean", "--manifest-path", fixture], env=env, check=True)
 cases = [
-    (["git", "log", "--all", "--stat", "--oneline"], ["./target/release/rtk", "git", "log", "--all", "--stat", "--oneline"], None, None),
+    (["git", "log", "--stat", "--oneline", base], ["./target/release/rtk", "git", "log", "--stat", "--oneline", base], None, None),
     (["git", "diff", base], ["./target/release/rtk", "git", "diff", base], None, None),
-    (["find", ".", "-type", "f"], ["./target/release/rtk", "find", ".", "-type", "f"], None, None),
+    (["find", "src", "docs", "hooks", "specs", "-type", "f"], ["./target/release/rtk", "find", "src", "docs", "hooks", "specs", "-type", "f"], None, None),
     (["rg", "-n", "test", "src"], ["./target/release/rtk", "rg", "-n", "test", "src"], None, None),
-    (["cargo", "test", "--manifest-path", fixture], ["./target/release/rtk", "cargo", "test", "--manifest-path", fixture], raw_env, rtk_env),
+    (["cargo", "test", "--verbose", "--manifest-path", fixture], ["./target/release/rtk", "cargo", "test", "--verbose", "--manifest-path", fixture], raw_env, rtk_env),
 ]
 for raw, filtered, raw_env, filtered_env in cases:
     print(measure(raw, raw_env), measure(filtered, filtered_env))
@@ -114,18 +121,19 @@ samples = sorted(run() for _ in range(200))
 print(statistics.median(samples), samples[189], samples[-1])
 ```
 
-For `daae1bfff06e5bf0f67068372c4f6cf02d68d9dd`, the recorded median was
-**8.770 ms**, p95 **9.649 ms**, maximum **10.498 ms**.
+For `c89508aba6676ecd0f034895dea70f385110adad`, the recorded median was
+**8.770 ms**, p95 **9.840 ms**, maximum **10.598 ms**. The acceptance target
+is median < 10 ms; no p95 target is claimed.
 
 ## Fixed-candidate Focused Check
 
-- Candidate: `daae1bfff06e5bf0f67068372c4f6cf02d68d9dd`.
+- Candidate: `c89508aba6676ecd0f034895dea70f385110adad`.
 - Scope: `src/main.rs`, `src/hooks/{hook_cmd,init,constants,permissions}.rs`,
-  `src/discover/registry.rs`, and `hooks/codex/README.md`.
+  `src/discover/{registry,rules}.rs`, and `hooks/codex/README.md`.
 - Consumers: Codex `PreToolUse`, CLI parsing, init/show/uninstall, shared registry.
 - Command: `cargo test codex && cargo test discover::registry::tests && cargo test hooks::hook_cmd::tests`.
-- Result: PASS — 23 Codex, 393 registry, and 117 hook tests.
-- Elapsed: 1.90 seconds; slowest step: registry tests at 0.25 seconds.
+- Result: PASS — 24 Codex, 394 registry, and 118 hook tests.
+- Elapsed: 6.59 seconds; slowest step: registry tests at 0.25 seconds.
 - Focused target: 60 seconds; met.
 
 ## Documentation Impact Classification
