@@ -1,0 +1,376 @@
+#!/usr/bin/env python3
+"""Run the fixed RTK acceptance corpus and verify its preserved semantics."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shlex
+import statistics
+import subprocess
+import sys
+from pathlib import Path
+
+
+BASE = "9cdf66f805adc7a710a4f517a2829fae96c49525"
+PRODUCTION = "c89508aba6676ecd0f034895dea70f385110adad"
+RANGE = f"{BASE}..{PRODUCTION}"
+ROOT = Path(__file__).resolve().parents[2]
+CORPUS = ROOT / "target" / "codex-corpus"
+BINARY = ROOT / "target" / "release" / "rtk"
+FIXTURE = "specs/001-codex-native-hook/fixtures/failing-rust/Cargo.toml"
+RAW_TARGET = "target/codex-corpus/raw"
+FILTERED_TARGET = "target/codex-corpus/filtered"
+TEE_DIR = "target/codex-corpus/tee"
+ISOLATED_HOME = CORPUS / "home"
+
+
+class VerificationError(RuntimeError):
+    pass
+
+
+def environment(*, filtered: bool = False, cargo_target: str | None = None) -> dict[str, str]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "HOME": str(ISOLATED_HOME),
+            "XDG_CONFIG_HOME": str(CORPUS / "config"),
+            "XDG_DATA_HOME": str(CORPUS / "data"),
+            "XDG_CACHE_HOME": str(CORPUS / "cache"),
+            "CARGO_HOME": str(CORPUS / "cargo-home"),
+            "CARGO_NET_OFFLINE": "1",
+            "CARGO_TERM_COLOR": "never",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_OPTIONAL_LOCKS": "0",
+            "GIT_PAGER": "cat",
+            "LC_ALL": "C",
+            "NO_COLOR": "1",
+            "RUST_BACKTRACE": "0",
+            "TERM": "dumb",
+        }
+    )
+    if filtered:
+        env.update(
+            {
+                "RTK_TEE_DIR": TEE_DIR,
+                "RTK_HOOK_AUDIT": "0",
+                "RTK_DB_PATH": str(CORPUS / "tracking.db"),
+            }
+        )
+    if cargo_target is not None:
+        env["CARGO_TARGET_DIR"] = cargo_target
+    return env
+
+
+def run(command: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[bytes]:
+    try:
+        return subprocess.run(
+            command,
+            cwd=ROOT,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except OSError as exc:
+        raise VerificationError(f"could not run {' '.join(command)}: {exc}") from exc
+
+
+def output(result: subprocess.CompletedProcess[bytes]) -> bytes:
+    return result.stdout + result.stderr
+
+
+def text(result: subprocess.CompletedProcess[bytes]) -> str:
+    return output(result).decode("utf-8", errors="replace")
+
+
+def recovery_paths(value: str) -> tuple[list[Path], bool]:
+    paths: list[Path] = []
+    malformed = False
+    for match in re.finditer(r"\[(?:full output|see remaining):\s*([^\]]+)\]", value):
+        try:
+            parts = shlex.split(match.group(1))
+        except ValueError:
+            malformed = True
+            continue
+        if not parts:
+            malformed = True
+            continue
+        token = parts[-1]
+        if token == "~" or token.startswith("~/"):
+            token = str(ISOLATED_HOME) + token[1:]
+        token = token.replace("$HOME", str(ISOLATED_HOME))
+        path = Path(token)
+        if not path.is_absolute():
+            path = ROOT / path
+        paths.append(path.resolve())
+    return paths, malformed
+
+
+def inside_corpus(path: Path) -> bool:
+    try:
+        path.relative_to(CORPUS.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def recovery_contents(value: str) -> tuple[list[Path], list[str], bool]:
+    paths, malformed = recovery_paths(value)
+    contents: list[str] = []
+    for path in paths:
+        if inside_corpus(path) and path.is_file():
+            contents.append(path.read_text(encoding="utf-8", errors="replace"))
+    exists = bool(paths) and not malformed and all(inside_corpus(p) and p.is_file() for p in paths)
+    return paths, contents, exists
+
+
+def base_semantics(raw: subprocess.CompletedProcess[bytes], filtered: subprocess.CompletedProcess[bytes]) -> dict[str, bool]:
+    return {
+        "status_preserved": raw.returncode == filtered.returncode,
+        "raw_above_1KiB": len(output(raw)) > 1024,
+    }
+
+
+def record(
+    name: str,
+    raw: subprocess.CompletedProcess[bytes],
+    filtered: subprocess.CompletedProcess[bytes],
+    semantics: dict[str, bool],
+) -> tuple[dict[str, object], float]:
+    semantics["ok"] = all(semantics.values())
+    raw_bytes = len(output(raw))
+    filtered_bytes = len(output(filtered))
+    reduction = 100.0 * (raw_bytes - filtered_bytes) / raw_bytes if raw_bytes else -100.0
+    return (
+        {
+            "raw_bytes": raw_bytes,
+            "filtered_bytes": filtered_bytes,
+            "reduction": round(reduction, 1),
+            "raw_status": raw.returncode,
+            "filtered_status": filtered.returncode,
+            "semantic": semantics,
+        },
+        reduction,
+    )
+
+
+def log_commit_count(value: str) -> int:
+    return len(re.findall(r"(?m)^[0-9a-f]{7,40}(?:\s|$)", value))
+
+
+def diff_paths(value: str) -> list[str]:
+    paths: list[str] = []
+    for line in value.splitlines():
+        if not line.startswith("diff --git "):
+            continue
+        rest = line[len("diff --git ") :]
+        if " b/" in rest:
+            paths.append(rest.split(" b/", 1)[1])
+    return paths
+
+
+def find_path_visible(path: str, value: str) -> bool:
+    if path in value:
+        return True
+    parent, _, name = path.rpartition("/")
+    if not parent:
+        return False
+    return bool(re.search(rf"(?m)^{re.escape(parent)}/\s+[^\n]*\b{re.escape(name)}(?:\s|$)", value))
+
+
+def rg_matches(value: str) -> list[str]:
+    paths: list[str] = []
+    for line in value.splitlines():
+        match = re.match(r"^(.+?):\d+:", line)
+        if match:
+            paths.append(match.group(1))
+    return paths
+
+
+def verify_log(raw: subprocess.CompletedProcess[bytes], filtered: subprocess.CompletedProcess[bytes]) -> dict[str, bool]:
+    raw_value = text(raw)
+    filtered_value = text(filtered)
+    semantics = base_semantics(raw, filtered)
+    semantics.update(
+        {
+            "output_equal": output(raw) == output(filtered),
+            "commit_count_preserved": log_commit_count(raw_value) == log_commit_count(filtered_value)
+            and log_commit_count(raw_value) > 0,
+        }
+    )
+    return semantics
+
+
+def verify_diff(raw: subprocess.CompletedProcess[bytes], filtered: subprocess.CompletedProcess[bytes]) -> dict[str, bool]:
+    raw_paths = diff_paths(text(raw))
+    filtered_value = text(filtered)
+    header = re.search(r"(?m)^\s*(\d+) files changed,", filtered_value)
+    semantics = base_semantics(raw, filtered)
+    semantics.update(
+        {
+            "changed_paths_preserved": bool(raw_paths) and all(path in filtered_value for path in raw_paths),
+            "changed_file_count_preserved": bool(header)
+            and len(set(raw_paths)) == len(raw_paths) == int(header.group(1)),
+        }
+    )
+    return semantics
+
+
+def verify_find(raw: subprocess.CompletedProcess[bytes], filtered: subprocess.CompletedProcess[bytes]) -> dict[str, bool]:
+    raw_paths = [line for line in text(raw).splitlines() if line]
+    filtered_value = text(filtered)
+    header = re.search(r"(?m)^(\d+)F\s+\d+D:", filtered_value)
+    paths, contents, recovery_ok = recovery_contents(filtered_value)
+    representatives = [
+        path
+        for path in (
+            "src/main.rs",
+            "docs/TELEMETRY.md",
+            "hooks/codex/README.md",
+            "specs/001-codex-native-hook/spec.md",
+        )
+        if path in raw_paths
+    ]
+    visible_or_recovered = lambda path: find_path_visible(path, filtered_value) or any(path in content for content in contents)
+    hidden_recovered = any(
+        path not in filtered_value and any(path in content for content in contents)
+        for path in raw_paths
+    )
+    semantics = base_semantics(raw, filtered)
+    semantics.update(
+        {
+            "file_count_preserved": bool(header) and int(header.group(1)) == len(raw_paths),
+            "representative_paths_present": bool(representatives) and all(visible_or_recovered(path) for path in representatives),
+            "truncation_marker": bool(re.search(r"(?m)^\+\d+ more(?:\s|$)", filtered_value)),
+            "recovery_hint": bool(paths),
+            "recovery_paths_exist": recovery_ok,
+            "hidden_raw_path_recovered": hidden_recovered,
+        }
+    )
+    return semantics
+
+
+def verify_rg(raw: subprocess.CompletedProcess[bytes], filtered: subprocess.CompletedProcess[bytes]) -> dict[str, bool]:
+    raw_paths = rg_matches(text(raw))
+    filtered_value = text(filtered)
+    header = re.search(r"(?m)^(\d+) matches in (\d+) files:", filtered_value)
+    paths, contents, recovery_ok = recovery_contents(filtered_value)
+    representative = "src/main.rs" if "src/main.rs" in raw_paths else (sorted(set(raw_paths))[0] if raw_paths else "")
+    semantics = base_semantics(raw, filtered)
+    semantics.update(
+        {
+            "match_count_preserved": bool(header) and int(header.group(1)) == len(raw_paths),
+            "unique_file_count_preserved": bool(header) and int(header.group(2)) == len(set(raw_paths)),
+            "representative_path_recovered": bool(representative)
+            and (representative in filtered_value or any(representative in content for content in contents)),
+            "truncation_marker": bool(re.search(r"\+\d+ more(?:\s|$)", filtered_value)),
+            "recovery_hint": bool(paths),
+            "recovery_paths_exist": recovery_ok,
+        }
+    )
+    return semantics
+
+
+def verify_failure(raw: subprocess.CompletedProcess[bytes], filtered: subprocess.CompletedProcess[bytes]) -> dict[str, bool]:
+    filtered_value = text(filtered)
+    semantics = base_semantics(raw, filtered)
+    semantics.update(
+        {
+            "status_101": raw.returncode == 101 and filtered.returncode == 101,
+            "failure_identity_preserved": "preserves_failure_details" in filtered_value,
+            "failure_summary_preserved": "1 failed" in filtered_value,
+        }
+    )
+    return semantics
+
+
+def clean_fixture_targets() -> None:
+    for target in (RAW_TARGET, FILTERED_TARGET):
+        result = run(
+            ["cargo", "clean", "--manifest-path", FIXTURE],
+            environment(cargo_target=target),
+        )
+        if result.returncode != 0:
+            detail = text(result).strip().replace("\n", " ")
+            raise VerificationError(f"cargo clean failed for {target} (status {result.returncode}): {detail}")
+
+
+def main() -> int:
+    if not BINARY.is_file() or not os.access(BINARY, os.X_OK):
+        raise VerificationError(f"release binary missing or not executable: {BINARY}; run cargo build --release")
+
+    clean_fixture_targets()
+    cases: dict[str, dict[str, object]] = {}
+    reductions: list[float] = []
+
+    commands = [
+        (
+            "git_log",
+            ["git", "log", "--stat", "--oneline", RANGE],
+            [str(BINARY), "git", "log", "--stat", "--oneline", RANGE],
+            verify_log,
+            None,
+        ),
+        (
+            "git_diff",
+            ["git", "diff", RANGE],
+            [str(BINARY), "git", "diff", RANGE],
+            verify_diff,
+            None,
+        ),
+        (
+            "find",
+            ["find", "src", "docs", "hooks", "specs", "-type", "f"],
+            [str(BINARY), "find", "src", "docs", "hooks", "specs", "-type", "f"],
+            verify_find,
+            None,
+        ),
+        (
+            "rg",
+            ["rg", "-n", "test", "src"],
+            [str(BINARY), "rg", "-n", "test", "src"],
+            verify_rg,
+            None,
+        ),
+        (
+            "failing_rust_test",
+            ["cargo", "test", "--verbose", "--manifest-path", FIXTURE],
+            [str(BINARY), "cargo", "test", "--verbose", "--manifest-path", FIXTURE],
+            verify_failure,
+            (RAW_TARGET, FILTERED_TARGET),
+        ),
+    ]
+
+    for name, raw_command, filtered_command, verifier, cargo_targets in commands:
+        raw_env = environment(cargo_target=cargo_targets[0]) if cargo_targets else environment()
+        filtered_env = environment(filtered=True, cargo_target=cargo_targets[1]) if cargo_targets else environment(filtered=True)
+        raw = run(raw_command, raw_env)
+        filtered = run(filtered_command, filtered_env)
+        semantics = verifier(raw, filtered)
+        case, reduction = record(name, raw, filtered, semantics)
+        cases[name] = case
+        reductions.append(reduction)
+
+    median = statistics.median(reductions)
+    ok = all(case["semantic"]["ok"] for case in cases.values()) and median >= 30.0
+    result = {
+        "base": BASE,
+        "production": PRODUCTION,
+        "cases": cases,
+        "median_reduction": round(median, 1),
+        "median_at_least_30_percent": median >= 30.0,
+        "ok": ok,
+    }
+    print(json.dumps(result, separators=(",", ":"), sort_keys=True))
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except VerificationError as exc:
+        print(f"verify_acceptance.py: {exc}", file=sys.stderr)
+        raise SystemExit(2)
