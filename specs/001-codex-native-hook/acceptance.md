@@ -183,6 +183,30 @@ wire-compatibility remediation. The production implementation remains exactly
 - No production source or behavior changed in this evidence-only post-gate
   record.
 
+## Live Codex installation and canary
+
+This section is evidence-only, recorded after the post-remediation review and
+full gate above. The production implementation remains exactly
+`2ec0f044763cf9314fe96eafe6e25289c84cfaf0`; these observations do not change
+production source, configuration, or the installed binary.
+
+- On the integrated checkout `/Users/guicr/work/rtk` (after `51fb096`), the
+  approved hook-only installation used `/Users/guicr/.local/bin/rtk`, version
+  `0.42.4`.
+- `rtk init --show --codex` reported exactly
+  `[ok] Global hooks.json: rtk hook codex (timeout 5s)`.
+- `hooks.json.bak` had SHA-256
+  `cbcdace450f42959a46395e04cdb8c19aa079988e8e86d7b563c22f0695df8ce`, equal
+  to the pre-installation hash.
+- Live canary: `RTK_HOOK_AUDIT=1 codex exec --ephemeral --sandbox read-only
+  --json -C /Users/guicr/work/rtk ...`, with no
+  `--dangerously-bypass-hook-trust`, ran Codex CLI `0.151.0` and executed
+  `/bin/zsh -lc 'rtk git status'`.
+- The canary returned `* develop...origin/develop [ahead 38]` and
+  `clean — nothing to commit`; the audit recorded
+  `rewrite git status | rtk git status`.
+- A direct non-`Bash` passthrough returned 0 stdout bytes.
+
 ## Documentation Impact Classification
 
 Classification: `documentation`. The owning Codex README and feature acceptance

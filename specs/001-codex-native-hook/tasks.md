@@ -39,7 +39,7 @@
 
 ## Dependencies
 
-`T001 → T002 → T003–T005 → T006–T008 → T009–T010 → T011–T014 → T030–T031 → T032–T033`.
+`T001 → T002 → T003–T005 → T006–T008 → T009–T010 → T011–T014 → T030–T031 → T032–T033 → T034`.
 Production tasks are serial because they overlap the CLI and hook lifecycle.
 
 ## Execution Waves
@@ -51,6 +51,7 @@ Production tasks are serial because they overlap the CLI and hook lifecycle.
 - Wave 4: T011–T014 (closed-candidate checks; strictly serial).
 - Wave 5: T030–T031 (Codex wire compatibility remediation; strictly serial).
 - Wave 6: T032–T033 (post-remediation review and final gate; evidence-only).
+- Wave 7: T034 (live Codex installation and canary evidence-only record).
 
 ## Strategy
 
@@ -110,6 +111,18 @@ constitution requires observed RGR, not a broken commit.
   tests, 8 ignored, 0 failed, `real 6.99s`, and
   `copilot_selfheal_test` slowest at 2.57s. Production remains unchanged at
   `2ec0f044763cf9314fe96eafe6e25289c84cfaf0`.
+- Live installation/canary is evidence-only after that review and gate: on the
+  integrated `/Users/guicr/work/rtk` checkout after `51fb096`, RTK `0.42.4` at
+  `/Users/guicr/.local/bin/rtk` was already approved in hook-only mode;
+  `rtk init --show --codex` reported `[ok] Global hooks.json: rtk hook codex
+  (timeout 5s)`. The backup SHA-256 was
+  `cbcdace450f42959a46395e04cdb8c19aa079988e8e86d7b563c22f0695df8ce`, equal
+  to the pre-install hash. Without `--dangerously-bypass-hook-trust`, the
+  Codex CLI `0.151.0` canary ran `/bin/zsh -lc 'rtk git status'`, returned
+  `* develop...origin/develop [ahead 38]` and `clean — nothing to commit`, and
+  audit recorded `rewrite git status | rtk git status`; non-Bash passthrough
+  returned 0 stdout bytes. Production remains unchanged at
+  `2ec0f044763cf9314fe96eafe6e25289c84cfaf0`.
 - Evidence paths `specs/001-codex-native-hook/{acceptance.md,tasks.md}` bind
   to production SHA `2ec0f044763cf9314fe96eafe6e25289c84cfaf0`.
 
@@ -155,3 +168,7 @@ constitution requires observed RGR, not a broken commit.
 
 - [x] T032 Obtain independent read-only review of the Codex 0.151.0 protocol fix; PASS on closed SHA `60586f2a8f910fb51725cc52f6a1ee768b4dceba`
 - [x] T033 Run the post-remediation gate `/usr/bin/time -p sh -c 'cargo fmt --all --check && cargo clippy --all-targets -- -D warnings && cargo test --all'` — PASS: 2,955 unit + 83 integration = 3,038; 8 ignored, 0 failed; `real 6.99s`; slowest target `copilot_selfheal_test` at 2.57s; production remained `2ec0f044763cf9314fe96eafe6e25289c84cfaf0`
+
+## Phase 14: Live Codex installation and canary evidence
+
+- [x] T034 Record the post-review/full-gate live Codex 0.151.0 hook-only installation and canary on integrated `/Users/guicr/work/rtk`; evidence-only, with production unchanged at `2ec0f044763cf9314fe96eafe6e25289c84cfaf0`
