@@ -13,6 +13,7 @@ import statistics
 import subprocess
 import sys
 import tarfile
+import tempfile
 from pathlib import Path
 
 
@@ -350,6 +351,79 @@ def verify_failure(raw: subprocess.CompletedProcess[bytes], filtered: subprocess
     return semantics
 
 
+def validate_corpus_paths(root: Path, corpus: Path) -> Path:
+    target = root / "target"
+    if target.is_symlink():
+        raise VerificationError(f"refusing symlinked target directory: {target}")
+    if corpus.is_symlink():
+        raise VerificationError(f"refusing symlinked corpus directory: {corpus}")
+    target_real = target.resolve()
+    corpus_real = corpus.resolve()
+    if corpus.parent != target or corpus_real.parent != target_real:
+        raise VerificationError(f"corpus is not a direct child of target: {corpus}")
+    return corpus_real
+
+
+def initialize_corpus(root: Path, corpus: Path) -> Path:
+    expected = validate_corpus_paths(root, corpus)
+    target = root / "target"
+    try:
+        target.mkdir(exist_ok=True)
+        validate_corpus_paths(root, corpus)
+        corpus.mkdir(exist_ok=True)
+    except OSError as exc:
+        raise VerificationError(f"could not initialize corpus {corpus}: {exc}") from exc
+    actual = validate_corpus_paths(root, corpus)
+    if actual != expected:
+        raise VerificationError(f"corpus path changed during initialization: {corpus}")
+    return actual
+
+
+def validate_managed_path(path: Path, root: Path, corpus: Path, corpus_real: Path) -> None:
+    if validate_corpus_paths(root, corpus) != corpus_real:
+        raise VerificationError(f"validated corpus changed: {corpus}")
+    if path.parent != corpus or path.parent.resolve() != corpus_real:
+        raise VerificationError(f"refusing managed path outside corpus: {path}")
+
+
+def recreate_directory(path: Path, root: Path, corpus: Path, corpus_real: Path) -> None:
+    validate_managed_path(path, root, corpus, corpus_real)
+    if path.is_symlink():
+        path.unlink()
+    elif path.exists():
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+    validate_managed_path(path, root, corpus, corpus_real)
+    path.mkdir()
+
+
+def symlink_corpus_self_test() -> bool:
+    with tempfile.TemporaryDirectory() as temporary:
+        base = Path(temporary)
+        root = base / "root"
+        target = root / "target"
+        outside = base / "outside"
+        root.mkdir()
+        target.mkdir()
+        outside.mkdir()
+        sentinel = outside / "sentinel"
+        sentinel.write_bytes(b"untouched")
+        corpus = target / "codex-corpus"
+        corpus.symlink_to(outside, target_is_directory=True)
+        try:
+            initialize_corpus(root, corpus)
+        except VerificationError:
+            rejected = True
+        else:
+            rejected = False
+        untouched = corpus.is_symlink() and sentinel.read_bytes() == b"untouched"
+        result = rejected and untouched
+        assert result, "symlinked corpus touched its outside target"
+        return result
+
+
 def adversarial_self_tests() -> dict[str, bool]:
     raw_shortstat = " 22 files changed, 1438 insertions(+), 98 deletions(-)\n"
     false_shortstats = {
@@ -373,22 +447,18 @@ def adversarial_self_tests() -> dict[str, bool]:
     irrelevant_rg_recovery_rejected = not all(irrelevant.values())
     assert irrelevant_rg_recovery_rejected, "irrelevant rg recovery was accepted"
     assert all(rg_coverage(raw_rg, visible_rg, ["src/b.rs:2:test\n"]).values())
-    return {**diff_checks, "irrelevant_rg_recovery_rejected": irrelevant_rg_recovery_rejected}
+    return {
+        **diff_checks,
+        "irrelevant_rg_recovery_rejected": irrelevant_rg_recovery_rejected,
+        "symlinked_corpus_rejected_without_touching_sentinel": symlink_corpus_self_test(),
+    }
 
 
-def recreate_directory(path: Path) -> None:
-    if path.parent != CORPUS:
-        raise VerificationError(f"refusing to recreate path outside corpus: {path}")
-    if path.is_symlink() or (path.exists() and not path.is_dir()):
-        path.unlink()
-    elif path.exists():
-        shutil.rmtree(path)
-    path.mkdir(parents=True)
-
-
-def prepare_production() -> None:
-    CORPUS.mkdir(parents=True, exist_ok=True)
-    ISOLATED_HOME.mkdir(parents=True, exist_ok=True)
+def prepare_production(expected_corpus: Path) -> None:
+    corpus_real = initialize_corpus(ROOT, CORPUS)
+    if corpus_real != expected_corpus:
+        raise VerificationError(f"corpus path changed before initialization: {CORPUS}")
+    recreate_directory(ISOLATED_HOME, ROOT, CORPUS, corpus_real)
     ancestor = run(
         ["git", "merge-base", "--is-ancestor", PRODUCTION, "HEAD"],
         environment(),
@@ -401,9 +471,10 @@ def prepare_production() -> None:
     if archived.returncode != 0:
         raise VerificationError(f"git archive failed (status {archived.returncode}): {text(archived).strip()}")
 
-    recreate_directory(PRODUCTION_SOURCE)
-    recreate_directory(PRODUCTION_TARGET)
-    recreate_directory(TEE_DIR)
+    recreate_directory(PRODUCTION_SOURCE, ROOT, CORPUS, corpus_real)
+    recreate_directory(PRODUCTION_TARGET, ROOT, CORPUS, corpus_real)
+    recreate_directory(TEE_DIR, ROOT, CORPUS, corpus_real)
+    validate_managed_path(PRODUCTION_SOURCE, ROOT, CORPUS, corpus_real)
     try:
         with tarfile.open(fileobj=io.BytesIO(archived.stdout), mode="r:") as archive:
             archive.extractall(PRODUCTION_SOURCE, filter="data")
@@ -418,6 +489,7 @@ def prepare_production() -> None:
             "NO_COLOR": "1",
         }
     )
+    validate_managed_path(PRODUCTION_TARGET, ROOT, CORPUS, corpus_real)
     built = run(["cargo", "build", "--release", "--offline"], build_env, PRODUCTION_SOURCE)
     if built.returncode != 0:
         raise VerificationError(f"production build failed (status {built.returncode}): {text(built).strip()}")
@@ -425,8 +497,9 @@ def prepare_production() -> None:
         raise VerificationError(f"production build did not create executable: {BINARY}")
 
 
-def clean_fixture_targets() -> None:
+def clean_fixture_targets(corpus_real: Path) -> None:
     for target in (RAW_TARGET, FILTERED_TARGET):
+        recreate_directory(target, ROOT, CORPUS, corpus_real)
         result = run(
             ["cargo", "clean", "--manifest-path", FIXTURE],
             environment(cargo_target=target),
@@ -438,9 +511,10 @@ def clean_fixture_targets() -> None:
 
 
 def main() -> int:
+    expected_corpus = validate_corpus_paths(ROOT, CORPUS)
     adversarial = adversarial_self_tests()
-    prepare_production()
-    clean_fixture_targets()
+    prepare_production(expected_corpus)
+    clean_fixture_targets(expected_corpus)
     cases: dict[str, dict[str, object]] = {}
     reductions: list[float] = []
 
@@ -490,7 +564,16 @@ def main() -> int:
     for name, raw_command, filtered_command, verifier, cargo_targets, cwd in commands:
         raw_env = environment(cargo_target=cargo_targets[0]) if cargo_targets else environment()
         filtered_env = environment(filtered=True, cargo_target=cargo_targets[1]) if cargo_targets else environment(filtered=True)
+        if validate_corpus_paths(ROOT, CORPUS) != expected_corpus:
+            raise VerificationError(f"validated corpus changed before raw command: {CORPUS}")
+        if cargo_targets:
+            validate_managed_path(cargo_targets[0], ROOT, CORPUS, expected_corpus)
         raw = run(raw_command, raw_env, cwd)
+        if validate_corpus_paths(ROOT, CORPUS) != expected_corpus:
+            raise VerificationError(f"validated corpus changed before filtered command: {CORPUS}")
+        validate_managed_path(TEE_DIR, ROOT, CORPUS, expected_corpus)
+        if cargo_targets:
+            validate_managed_path(cargo_targets[1], ROOT, CORPUS, expected_corpus)
         filtered = run(filtered_command, filtered_env, cwd)
         if name == "git_diff":
             raw_shortstat = run(["git", "diff", "--shortstat", RANGE], environment(), ROOT)
