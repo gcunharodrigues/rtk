@@ -2,7 +2,10 @@
 
 ## Scope
 
-**Deployed hook artifacts** — the actual files installed on user machines by `rtk init`. These are shell scripts, TypeScript plugins, and rules files that run outside the Rust binary. They are **thin delegates**: parse agent-specific JSON, call `rtk rewrite` as a subprocess, format agent-specific response. Zero filtering logic lives here.
+**Deployed hook artifacts** — the files installed by `rtk init`. Most shell
+scripts are **thin delegates**: parse agent JSON, invoke `rtk rewrite`, and
+format the agent response. Native Codex runs `rtk hook codex`, which calls the
+shared registry in-process. Zero filtering logic lives in the adapters.
 
 Owns: per-agent hook scripts and configuration files for 10 supported agents (Claude Code, Copilot, Cursor, Cline, Windsurf, Codex, OpenCode, Hermes, Pi, Mistral Vibe).
 
@@ -27,7 +30,10 @@ Agent runs command (e.g., "cargo test --nocapture")
   -> Filtered output reaches LLM (up to 90% fewer bash output bytes)
 ```
 
-All rewrite logic lives in the Rust binary (`src/discover/registry.rs`). Hook scripts are **thin delegates** that handle agent-specific JSON formats and call `rtk rewrite` for the actual decision. This ensures a single source of truth for all 70+ rewrite patterns.
+All rewrite logic lives in the Rust binary (`src/discover/registry.rs`). Shell
+scripts handle agent JSON and call `rtk rewrite`; native Codex (`rtk hook
+codex`) calls that shared registry in-process. This is the single source of
+truth for all 70+ rewrite patterns.
 
 ## Directory Structure
 

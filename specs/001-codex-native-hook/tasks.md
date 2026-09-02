@@ -77,7 +77,7 @@ then accept only with measured savings and semantic evidence.
   GREEN: both regressions fixed, 23 Codex tests, Clippy, format, and diff checks
   passed.
 - Evidence paths `specs/001-codex-native-hook/{acceptance.md,tasks.md}` bind
-  to production SHA `9838e31df58e9b8fe4872235de897ae311e45d3f`.
+  to production SHA `daae1bfff06e5bf0f67068372c4f6cf02d68d9dd`.
 
 ## Phase 6: Convergence
 
@@ -96,3 +96,7 @@ then accept only with measured savings and semantic evidence.
 ## Phase 9: Documentation remediation
 
 - [x] T020 Replace remaining Codex prompt-only guidance with global `PreToolUse` installation (`rtk init -g --codex`, optional `--hook-only`, `Bash` → `rtk hook codex`), Codex-owned approval, and local awareness-only mode
+
+## Phase 10: Evidence reproducibility
+
+- [x] T021 Bind the production candidate, commit the failing Rust fixture, and record exact production, corpus, and latency commands in `acceptance.md`

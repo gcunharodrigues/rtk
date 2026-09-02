@@ -13,12 +13,15 @@ RTK supports all major AI coding agents across 3 integration tiers.
 
 Each agent integration intercepts CLI commands before execution and rewrites them to their RTK equivalent. The agent runs `rtk cargo test` instead of `cargo test`, sees filtered output, and reads up to 90% fewer bash output bytes — without any change to your workflow.
 
-All rewrite logic lives in the RTK binary (`rtk rewrite`). Agent hooks are thin delegates that parse the agent-specific JSON format and call `rtk rewrite` for the actual decision.
+Most shell-script hooks are thin delegates: they parse agent JSON and invoke
+`rtk rewrite` for the decision. The native Codex hook instead runs `rtk hook
+codex`, which calls the shared registry in-process. Both use the same registry.
 
 ```
 Agent runs "cargo test"
   -> Hook intercepts (PreToolUse / plugin event)
-  -> Calls rtk rewrite "cargo test"
+  -> Invokes rtk rewrite "cargo test" (shell hooks)
+     or rtk hook codex (native Codex)
   -> Returns "rtk cargo test"
   -> Agent executes filtered command
   -> LLM reads up to 90% fewer bash output bytes
