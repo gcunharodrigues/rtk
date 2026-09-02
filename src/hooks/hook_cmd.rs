@@ -695,6 +695,75 @@ fn run_claude_inner(input: &str) -> Option<String> {
     }
 }
 
+// ── Codex native hook ─────────────────────────────────────────
+
+/// Build the Codex PreToolUse response, leaving approval decisions to Codex.
+fn process_codex_payload(v: &Value) -> Option<Value> {
+    if v.get("tool_name").and_then(Value::as_str) != Some("Bash") {
+        return None;
+    }
+
+    let cmd = v
+        .pointer("/tool_input/command")
+        .and_then(Value::as_str)
+        .filter(|cmd| !cmd.is_empty())?;
+
+    let rewritten = match decide_hook_action(cmd, permissions::Host::Claude) {
+        HookDecision::AllowRewrite(rewritten) | HookDecision::AskRewrite(rewritten) => rewritten,
+        HookDecision::Deny | HookDecision::Defer => return None,
+    };
+
+    let mut updated_input = v.get("tool_input")?.clone();
+    updated_input
+        .as_object_mut()?
+        .insert("command".into(), Value::String(rewritten.clone()));
+
+    audit_log("rewrite", cmd, &rewritten);
+
+    Some(json!({
+        "hookSpecificOutput": {
+            "hookEventName": PRE_TOOL_USE_KEY,
+            "updatedInput": updated_input
+        }
+    }))
+}
+
+/// Run the Codex PreToolUse hook natively.
+pub fn run_codex() -> Result<()> {
+    let input = match read_stdin_limited() {
+        Ok(input) => input,
+        Err(_) => return Ok(()),
+    };
+
+    let input = strip_leading_bom(&input).trim();
+    if input.is_empty() {
+        return Ok(());
+    }
+
+    let v: Value = match serde_json::from_str(input) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = writeln!(io::stderr(), "[rtk hook] Failed to parse JSON input: {e}");
+            return Ok(());
+        }
+    };
+
+    if let Some(output) = process_codex_payload(&v) {
+        let _ = writeln!(io::stdout(), "{output}");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn run_codex_inner(input: &str) -> Option<String> {
+    if input.len() > STDIN_CAP {
+        return None;
+    }
+    let input = strip_leading_bom(input).trim();
+    let v: Value = serde_json::from_str(input).ok()?;
+    process_codex_payload(&v).map(|output| output.to_string())
+}
+
 // ── Cursor native hook ─────────────────────────────────────────
 
 /// Run the Cursor Agent hook natively.
@@ -1423,6 +1492,63 @@ mod tests {
             }
         })
         .to_string()
+    }
+
+    fn codex_input(tool_name: &str, cmd: &str) -> String {
+        json!({
+            "tool_name": tool_name,
+            "tool_input": {
+                "command": cmd,
+                "timeout": 30000,
+                "description": "Check repo status"
+            }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn test_codex_rewrite_preserves_input_and_permissions() {
+        let result = run_codex_inner(&codex_input("Bash", "git status")).unwrap();
+        let v: Value = serde_json::from_str(&result).unwrap();
+        let hook = &v["hookSpecificOutput"];
+
+        assert_eq!(hook["hookEventName"], PRE_TOOL_USE_KEY);
+        assert_eq!(hook["updatedInput"]["command"], "rtk git status");
+        assert_eq!(hook["updatedInput"]["timeout"], 30000);
+        assert_eq!(hook["updatedInput"]["description"], "Check repo status");
+        assert!(hook.get("permissionDecision").is_none());
+        assert!(hook.get("permissionDecisionReason").is_none());
+    }
+
+    #[test]
+    fn test_codex_passthrough_classes_are_silent() {
+        for input in [
+            codex_input("Bash", "htop"),
+            codex_input("Bash", "git status $(printf unsafe)"),
+            codex_input("Bash", "rtk git status"),
+            codex_input("Bash", "RTK_DISABLED=1 git status"),
+            codex_input("Other", "git status"),
+            codex_input("Bash", ""),
+        ] {
+            assert!(
+                run_codex_inner(&input).is_none(),
+                "unexpected output for {input}"
+            );
+        }
+        assert!(run_codex_inner("not valid json {{{").is_none());
+    }
+
+    #[test]
+    fn test_codex_oversized_input_is_silent() {
+        let input = json!({
+            "tool_name": "Bash",
+            "tool_input": {
+                "command": "git status",
+                "padding": "x".repeat(STDIN_CAP + 1)
+            }
+        })
+        .to_string();
+        assert!(run_codex_inner(&input).is_none());
     }
 
     #[test]
