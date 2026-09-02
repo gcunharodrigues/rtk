@@ -63,37 +63,23 @@ raw and filtered `CARGO_TARGET_DIR` paths before measuring.
 |---|---|---|---:|---:|---:|
 | Git log | `git log --stat --oneline 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | `./target/release/rtk git log --stat --oneline 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | 4,108 / 4,108 | 0.0% | 0 |
 | Git diff | `git diff 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | `./target/release/rtk git diff 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | 95,006 / 34,054 | 64.2% | 0 |
-| File listing | `find src docs hooks specs -type f` | `./target/release/rtk find src docs hooks specs -type f` | 7,050 / 1,223 | 82.7% | 0 |
-| Text search | `rg -n test src` | `./target/release/rtk rg -n test src` | 600,016 / 12,656 | 97.9% | 0 |
-| Failing Rust test | `CARGO_TARGET_DIR=target/codex-corpus/raw cargo test --verbose --manifest-path specs/001-codex-native-hook/fixtures/failing-rust/Cargo.toml` | `CARGO_TARGET_DIR=target/codex-corpus/filtered ./target/release/rtk cargo test --verbose --manifest-path specs/001-codex-native-hook/fixtures/failing-rust/Cargo.toml` | 2,277 / 477 | 79.1% | 101 |
+| File listing | `find src docs hooks specs -type f` | `./target/release/rtk find src docs hooks specs -type f` | 7,160 / 1,203 | 83.2% | 0 |
+| Text search | `rg -n test src` | `./target/release/rtk rg -n test src` | 600,016 / 12,496 | 97.9% | 0 |
+| Failing Rust test | `CARGO_TARGET_DIR=target/codex-corpus/raw cargo test --verbose --manifest-path specs/001-codex-native-hook/fixtures/failing-rust/Cargo.toml` | `CARGO_TARGET_DIR=target/codex-corpus/filtered ./target/release/rtk cargo test --verbose --manifest-path specs/001-codex-native-hook/fixtures/failing-rust/Cargo.toml` | 2,277 / 457 | 79.9% | 101 |
 
-The failing case retained `preserves_failure_details`; `0 passed; 1 failed`.
-Median: **79.1%**. The values are the recorded result for the named machine
-and candidate, not a cross-machine byte-for-byte threshold.
+The executable comparator is:
 
-```python
-import os, subprocess
-
-def measure(command, env=None):
-    run = subprocess.run(command, capture_output=True, env=env)
-    return len(run.stdout) + len(run.stderr), run.returncode
-
-base = "9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad"
-fixture = "specs/001-codex-native-hook/fixtures/failing-rust/Cargo.toml"
-raw_env = {**os.environ, "CARGO_TARGET_DIR": "target/codex-corpus/raw"}
-rtk_env = {**os.environ, "CARGO_TARGET_DIR": "target/codex-corpus/filtered"}
-for env in (raw_env, rtk_env):
-    subprocess.run(["cargo", "clean", "--manifest-path", fixture], env=env, check=True)
-cases = [
-    (["git", "log", "--stat", "--oneline", base], ["./target/release/rtk", "git", "log", "--stat", "--oneline", base], None, None),
-    (["git", "diff", base], ["./target/release/rtk", "git", "diff", base], None, None),
-    (["find", "src", "docs", "hooks", "specs", "-type", "f"], ["./target/release/rtk", "find", "src", "docs", "hooks", "specs", "-type", "f"], None, None),
-    (["rg", "-n", "test", "src"], ["./target/release/rtk", "rg", "-n", "test", "src"], None, None),
-    (["cargo", "test", "--verbose", "--manifest-path", fixture], ["./target/release/rtk", "cargo", "test", "--verbose", "--manifest-path", fixture], raw_env, rtk_env),
-]
-for raw, filtered, raw_env, filtered_env in cases:
-    print(measure(raw, raw_env), measure(filtered, filtered_env))
+```sh
+python3 specs/001-codex-native-hook/verify_acceptance.py
 ```
+
+It returned `ok: true` and **79.9% median reduction**. Its case-specific
+assertions proved: equal commit count and log output; every changed diff path
+and count preserved; exact file and search counts; representative paths;
+truncation markers; readable isolated recovery files containing hidden paths;
+and failing-test identity, count, and status 101. Every raw case exceeded 1 KiB.
+The values are machine-specific; the semantic assertions and 30% median gate
+are the acceptance criteria.
 
 ## Latency
 
