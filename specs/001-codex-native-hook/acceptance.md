@@ -63,9 +63,9 @@ raw and filtered `CARGO_TARGET_DIR` paths before measuring.
 |---|---|---|---:|---:|---:|
 | Git log | `git log --stat --oneline 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | `./target/release/rtk git log --stat --oneline 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | 4,108 / 4,108 | 0.0% | 0 |
 | Git diff | `git diff 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | `./target/release/rtk git diff 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | 95,006 / 34,054 | 64.2% | 0 |
-| File listing | `find src docs hooks specs -type f` | `./target/release/rtk find src docs hooks specs -type f` | 7,160 / 1,203 | 83.2% | 0 |
-| Text search | `rg -n test src` | `./target/release/rtk rg -n test src` | 600,016 / 12,496 | 97.9% | 0 |
-| Failing Rust test | `CARGO_TARGET_DIR=target/codex-corpus/raw cargo test --verbose --manifest-path specs/001-codex-native-hook/fixtures/failing-rust/Cargo.toml` | `CARGO_TARGET_DIR=target/codex-corpus/filtered ./target/release/rtk cargo test --verbose --manifest-path specs/001-codex-native-hook/fixtures/failing-rust/Cargo.toml` | 2,277 / 457 | 79.9% | 101 |
+| File listing | `find src docs hooks specs -type f` | isolated production build: `rtk find src docs hooks specs -type f` | 7,050 / 1,249 | 82.3% | 0 |
+| Text search | `rg -n test src` | isolated production build: `rtk rg -n test src` | 600,016 / 12,864 | 97.9% | 0 |
+| Failing Rust test | isolated fixture `cargo test --verbose` | isolated production build: `rtk cargo test --verbose` | 2,315 / 503 | 78.3% | 101 |
 
 The executable comparator is:
 
@@ -73,11 +73,14 @@ The executable comparator is:
 python3 specs/001-codex-native-hook/verify_acceptance.py
 ```
 
-It returned `ok: true` and **79.9% median reduction**. Its case-specific
-assertions proved: equal commit count and log output; every changed diff path
-and count preserved; exact file and search counts; representative paths;
-truncation markers; readable isolated recovery files containing hidden paths;
-and failing-test identity, count, and status 101. Every raw case exceeded 1 KiB.
+It reconstructs `c89508a` with `git archive`, builds that tree offline, and runs
+the corpus there. It returned `ok: true` and **78.3% median reduction**. Its
+case-specific assertions proved: equal commit count and log output; every
+changed diff path plus exact file/insertion/deletion totals; exact file and
+search counts; representative paths; truncation markers; readable isolated
+recovery files containing hidden paths;
+and failing-test identity, count, and status 101. Adversarial self-checks reject
+false diff totals and irrelevant recovery files. Every raw case exceeded 1 KiB.
 The values are machine-specific; the semantic assertions and 30% median gate
 are the acceptance criteria.
 

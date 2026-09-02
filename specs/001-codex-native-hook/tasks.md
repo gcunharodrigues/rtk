@@ -110,3 +110,4 @@ constitution requires observed RGR, not a broken commit.
 - [x] T021 Bind the production candidate, commit the failing Rust fixture, and record fixed-SHA corpus and latency measurement methods in `acceptance.md`
 - [x] T022 Record `c89508a` alternate-form remediation and the fixed-candidate focused check in `acceptance.md`
 - [x] T023 Add and execute a fixed-SHA semantic corpus verifier for paths, counts, truncation, recovery, and failure status
+- [x] T024 Bind the verifier to an offline build of the production SHA and reject false diff totals or irrelevant recovery files
