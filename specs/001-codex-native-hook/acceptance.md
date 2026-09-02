@@ -27,7 +27,7 @@ The Codex adapter uses permission-neutral `decide_from_verdict(Default) →
 get_rewritten → rewrite_command → RULES`. The exhaustive Codex payload corpus
 asserted set equality and rewrote all **87/87 unique RTK targets exactly once**,
 while emitting no permission fields; Codex owns approval. `cargo test hook_cmd`
-passed all 116 hook tests. No Codex-specific registry exists.
+passed all 117 hook tests. No Codex-specific registry exists.
 
 ## Recorded production checks
 
@@ -117,15 +117,15 @@ print(statistics.median(samples), samples[189], samples[-1])
 For `daae1bfff06e5bf0f67068372c4f6cf02d68d9dd`, the recorded median was
 **8.770 ms**, p95 **9.649 ms**, maximum **10.498 ms**.
 
-## Historical fixed-candidate Focused Check
+## Fixed-candidate Focused Check
 
-- Candidate: `9838e31df58e9b8fe4872235de897ae311e45d3f`.
+- Candidate: `daae1bfff06e5bf0f67068372c4f6cf02d68d9dd`.
 - Scope: `src/main.rs`, `src/hooks/{hook_cmd,init,constants,permissions}.rs`,
   `src/discover/registry.rs`, and `hooks/codex/README.md`.
 - Consumers: Codex `PreToolUse`, CLI parsing, init/show/uninstall, shared registry.
-- Command: `cargo test codex && cargo test discover::registry::tests`.
-- Result: PASS — 23 Codex and 393 registry tests.
-- Elapsed: 0.76 seconds; slowest step: registry tests at 0.25 seconds.
+- Command: `cargo test codex && cargo test discover::registry::tests && cargo test hooks::hook_cmd::tests`.
+- Result: PASS — 23 Codex, 393 registry, and 117 hook tests.
+- Elapsed: 1.90 seconds; slowest step: registry tests at 0.25 seconds.
 - Focused target: 60 seconds; met.
 
 ## Documentation Impact Classification
