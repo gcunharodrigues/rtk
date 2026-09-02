@@ -403,7 +403,7 @@ enum Commands {
         #[arg(long)]
         uninstall: bool,
 
-        /// Target Codex CLI (uses AGENTS.md + RTK.md, no Claude hook patching)
+        /// Target Codex CLI (global hook plus AGENTS.md + RTK.md; local awareness only)
         #[arg(long)]
         codex: bool,
 

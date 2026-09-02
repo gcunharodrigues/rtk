@@ -14,13 +14,14 @@ use crate::hooks::constants::{
 };
 
 use super::constants::{
-    BEFORE_TOOL_KEY, CLAUDE_DIR, CLAUDE_HOOK_COMMAND, CODEX_DIR, CURSOR_HOOK_COMMAND, DROID_DIR,
-    DROID_EXECUTE_MATCHER, DROID_HOME_ENV, DROID_HOOKS_FILE, DROID_HOOKS_SUBDIR,
-    DROID_HOOK_COMMAND, DROID_SETTINGS_FILE, GEMINI_HOOK_FILE, HERMES_DIR, HERMES_PLUGINS_SUBDIR,
-    HERMES_PLUGIN_INIT_FILE, HERMES_PLUGIN_MANIFEST_FILE, HERMES_PLUGIN_NAME, HOOKS_JSON,
-    HOOKS_SUBDIR, PI_CODING_AGENT_DIR_ENV, PI_DIR, PI_EXTENSIONS_SUBDIR, PI_LOCAL_DIR,
-    PI_PLUGIN_FILE, PRE_TOOL_USE_KEY, REWRITE_HOOK_FILE, SETTINGS_JSON, VIBE_BASH_MATCH, VIBE_DIR,
-    VIBE_HOOKS_FILE, VIBE_HOOK_COMMAND, VIBE_HOOK_NAME, VIBE_PROMPTS_SUBDIR, VIBE_PROMPT_FILE,
+    BEFORE_TOOL_KEY, CLAUDE_DIR, CLAUDE_HOOK_COMMAND, CODEX_DIR, CODEX_HOOK_COMMAND,
+    CURSOR_HOOK_COMMAND, DROID_DIR, DROID_EXECUTE_MATCHER, DROID_HOME_ENV, DROID_HOOKS_FILE,
+    DROID_HOOKS_SUBDIR, DROID_HOOK_COMMAND, DROID_SETTINGS_FILE, GEMINI_HOOK_FILE, HERMES_DIR,
+    HERMES_PLUGINS_SUBDIR, HERMES_PLUGIN_INIT_FILE, HERMES_PLUGIN_MANIFEST_FILE,
+    HERMES_PLUGIN_NAME, HOOKS_JSON, HOOKS_SUBDIR, PI_CODING_AGENT_DIR_ENV, PI_DIR,
+    PI_EXTENSIONS_SUBDIR, PI_LOCAL_DIR, PI_PLUGIN_FILE, PRE_TOOL_USE_KEY, REWRITE_HOOK_FILE,
+    SETTINGS_JSON, VIBE_BASH_MATCH, VIBE_DIR, VIBE_HOOKS_FILE, VIBE_HOOK_COMMAND, VIBE_HOOK_NAME,
+    VIBE_PROMPTS_SUBDIR, VIBE_PROMPT_FILE,
 };
 use super::integrity;
 use super::is_claude_hook_command;
@@ -283,8 +284,8 @@ pub fn run(
         if claude_md {
             anyhow::bail!("--codex cannot be combined with --claude-md");
         }
-        if hook_only {
-            anyhow::bail!("--codex cannot be combined with --hook-only");
+        if hook_only && !global {
+            anyhow::bail!("--hook-only Codex installation requires --global");
         }
         if matches!(patch_mode, PatchMode::Auto) {
             anyhow::bail!("--codex cannot be combined with --auto-patch");
@@ -292,7 +293,7 @@ pub fn run(
         if matches!(patch_mode, PatchMode::Skip) {
             anyhow::bail!("--codex cannot be combined with --no-patch");
         }
-        run_codex_mode(global, ctx)?;
+        run_codex_mode(global, hook_only, ctx)?;
     } else {
         // Validation: Global-only features
         if install_opencode && !global {
@@ -893,6 +894,9 @@ fn uninstall_codex(global: bool, ctx: InitContext) -> Result<()> {
         for item in removed {
             println!("  - {}", item);
         }
+        if !dry_run {
+            println!("\nRestart Codex CLI to apply changes.");
+        }
     }
 
     Ok(())
@@ -902,6 +906,10 @@ fn uninstall_codex_at(codex_dir: &Path, ctx: InitContext) -> Result<Vec<String>>
     let InitContext { verbose, dry_run } = ctx;
     let mut removed = Vec::new();
     let absolute_rtk_md_ref = codex_rtk_md_ref(codex_dir);
+
+    if remove_codex_hooks_json(&codex_dir.join(HOOKS_JSON), ctx)? {
+        removed.push("hooks.json: removed RTK hook entry".to_string());
+    }
 
     let rtk_md_path = codex_dir.join(RTK_MD);
     if rtk_md_path.exists() {
@@ -935,9 +943,16 @@ fn uninstall_codex_at(codex_dir: &Path, ctx: InitContext) -> Result<Vec<String>>
         }
 
         if agents_changed {
-            atomic_write(&agents_md_path, &working_content).with_context(|| {
-                format!("Failed to write AGENTS.md: {}", agents_md_path.display())
-            })?;
+            if dry_run {
+                println!(
+                    "[dry-run] would update AGENTS.md: {}",
+                    agents_md_path.display()
+                );
+            } else {
+                atomic_write(&agents_md_path, &working_content).with_context(|| {
+                    format!("Failed to write AGENTS.md: {}", agents_md_path.display())
+                })?;
+            }
         }
     }
 
@@ -2374,7 +2389,260 @@ fn normalized_yaml_scalar(value: &str) -> Option<String> {
     (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
-fn run_codex_mode(global: bool, ctx: InitContext) -> Result<()> {
+const CODEX_HOOK_TIMEOUT: i64 = 5;
+
+fn codex_hook_entry() -> serde_json::Value {
+    serde_json::json!({
+        "matcher": "Bash",
+        "hooks": [{
+            "type": "command",
+            "command": CODEX_HOOK_COMMAND,
+            "timeout": CODEX_HOOK_TIMEOUT
+        }]
+    })
+}
+
+fn is_codex_hook(hook: &serde_json::Value) -> bool {
+    hook.get("command")
+        .and_then(|command| command.as_str())
+        .is_some_and(|command| command == CODEX_HOOK_COMMAND)
+}
+
+/// Remove exact RTK commands and append one canonical Codex hook entry.
+///
+/// Existing hook groups and all non-RTK hook objects retain their order and
+/// values. A group that contained only RTK entries is dropped; mixed groups
+/// remain with their user hooks intact.
+fn merge_codex_hook_entry(root: &mut serde_json::Value) -> Result<bool> {
+    let root_obj = root
+        .as_object_mut()
+        .context("Codex hooks.json root must be an object")?;
+    let hooks_obj = root_obj
+        .entry("hooks")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .context("Codex hooks.json 'hooks' value must be an object")?;
+    let pre_tool_use = hooks_obj
+        .entry(PRE_TOOL_USE_KEY)
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+        .context("Codex hooks.json 'PreToolUse' value must be an array")?;
+
+    let original = std::mem::take(pre_tool_use);
+    let mut retained = Vec::with_capacity(original.len() + 1);
+    for mut entry in original.iter().cloned() {
+        let mut removed = false;
+        if let Some(hooks) = entry
+            .get_mut("hooks")
+            .and_then(|value| value.as_array_mut())
+        {
+            let before = hooks.len();
+            hooks.retain(|hook| !is_codex_hook(hook));
+            removed = hooks.len() != before;
+        }
+
+        if removed
+            && entry
+                .get("hooks")
+                .and_then(|value| value.as_array())
+                .is_some_and(Vec::is_empty)
+        {
+            continue;
+        }
+        retained.push(entry);
+    }
+    retained.push(codex_hook_entry());
+
+    let changed = retained != original;
+    *pre_tool_use = retained;
+    Ok(changed)
+}
+
+/// Remove only exact `rtk hook codex` commands from a parsed hooks document.
+fn remove_codex_hook_entry(root: &mut serde_json::Value) -> Result<bool> {
+    let Some(root_obj) = root.as_object_mut() else {
+        anyhow::bail!("Codex hooks.json root must be an object")
+    };
+    let Some(hooks_value) = root_obj.get_mut("hooks") else {
+        return Ok(false);
+    };
+    let hooks_obj = hooks_value
+        .as_object_mut()
+        .context("Codex hooks.json 'hooks' value must be an object")?;
+    let Some(pre_value) = hooks_obj.get_mut(PRE_TOOL_USE_KEY) else {
+        return Ok(false);
+    };
+    let pre_tool_use = pre_value
+        .as_array_mut()
+        .context("Codex hooks.json 'PreToolUse' value must be an array")?;
+
+    let original = std::mem::take(pre_tool_use);
+    let mut retained = Vec::with_capacity(original.len());
+    let mut changed = false;
+    for mut entry in original {
+        let mut removed = false;
+        if let Some(hooks) = entry
+            .get_mut("hooks")
+            .and_then(|value| value.as_array_mut())
+        {
+            let before = hooks.len();
+            hooks.retain(|hook| !is_codex_hook(hook));
+            removed = hooks.len() != before;
+        }
+
+        if removed {
+            changed = true;
+            if entry
+                .get("hooks")
+                .and_then(|value| value.as_array())
+                .is_some_and(Vec::is_empty)
+            {
+                continue;
+            }
+        }
+        retained.push(entry);
+    }
+
+    let became_empty = retained.is_empty();
+    *pre_tool_use = retained;
+    if became_empty {
+        hooks_obj.remove(PRE_TOOL_USE_KEY);
+    }
+    Ok(changed)
+}
+
+fn codex_hook_already_present(root: &serde_json::Value) -> Result<bool> {
+    let Some(root_obj) = root.as_object() else {
+        anyhow::bail!("Codex hooks.json root must be an object")
+    };
+    let Some(hooks_value) = root_obj.get("hooks") else {
+        return Ok(false);
+    };
+    let hooks_obj = hooks_value
+        .as_object()
+        .context("Codex hooks.json 'hooks' value must be an object")?;
+    let Some(pre_value) = hooks_obj.get(PRE_TOOL_USE_KEY) else {
+        return Ok(false);
+    };
+    let pre_tool_use = pre_value
+        .as_array()
+        .context("Codex hooks.json 'PreToolUse' value must be an array")?;
+    Ok(pre_tool_use.iter().any(|entry| {
+        entry
+            .get("hooks")
+            .and_then(|value| value.as_array())
+            .is_some_and(|hooks| hooks.iter().any(is_codex_hook))
+    }))
+}
+
+fn read_codex_hooks_snapshot(path: &Path) -> Result<(Option<Vec<u8>>, serde_json::Value)> {
+    let Some(bytes) = read_optional_file(path)? else {
+        return Ok((None, serde_json::json!({})));
+    };
+    let content = std::str::from_utf8(&bytes)
+        .with_context(|| format!("Failed to read {} as UTF-8", path.display()))?;
+    let content = strip_leading_bom(content);
+    let root = if content.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        from_json_str(content)
+            .with_context(|| format!("Failed to parse {} as JSON", path.display()))?
+    };
+    Ok((Some(bytes), root))
+}
+
+fn read_optional_file(path: &Path) -> Result<Option<Vec<u8>>> {
+    match fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).with_context(|| format!("Failed to read {}", path.display())),
+    }
+}
+
+fn ensure_codex_snapshot_unchanged(path: &Path, snapshot: Option<&[u8]>) -> Result<()> {
+    let current = read_optional_file(path)?;
+    if current.as_deref() != snapshot {
+        anyhow::bail!(
+            "Codex hooks configuration changed while it was being updated: {}",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+fn codex_backup_path(path: &Path) -> PathBuf {
+    path.with_extension("json.bak")
+}
+
+fn patch_codex_hooks_json(path: &Path, ctx: InitContext) -> Result<bool> {
+    let InitContext { verbose, dry_run } = ctx;
+    let (snapshot, mut root) = read_codex_hooks_snapshot(path)?;
+    if !merge_codex_hook_entry(&mut root)? {
+        if verbose > 0 {
+            eprintln!("{}: Codex hook already canonical", path.display());
+        }
+        return Ok(false);
+    }
+
+    let serialized =
+        serde_json::to_string_pretty(&root).context("Failed to serialize Codex hooks.json")?;
+    if dry_run {
+        println!("[dry-run] would patch Codex hooks.json: {}", path.display());
+        if verbose > 0 {
+            println!("[dry-run] content:\n{}", serialized);
+        }
+        return Ok(true);
+    }
+
+    ensure_codex_snapshot_unchanged(path, snapshot.as_deref())?;
+    if snapshot.is_some() {
+        let backup_path = codex_backup_path(path);
+        fs::copy(path, &backup_path)
+            .with_context(|| format!("Failed to backup to {}", backup_path.display()))?;
+        if verbose > 0 {
+            eprintln!("Backup: {}", backup_path.display());
+        }
+    }
+    atomic_write(path, &serialized)
+        .with_context(|| format!("Failed to write Codex hooks.json: {}", path.display()))?;
+    Ok(true)
+}
+
+fn remove_codex_hooks_json(path: &Path, ctx: InitContext) -> Result<bool> {
+    let InitContext { verbose, dry_run } = ctx;
+    let (snapshot, mut root) = read_codex_hooks_snapshot(path)?;
+    let Some(snapshot) = snapshot else {
+        return Ok(false);
+    };
+    if !remove_codex_hook_entry(&mut root)? {
+        return Ok(false);
+    }
+
+    if dry_run {
+        println!(
+            "[dry-run] would remove RTK hook from Codex hooks.json: {}",
+            path.display()
+        );
+        if verbose > 0 {
+            let serialized = serde_json::to_string_pretty(&root)
+                .context("Failed to serialize Codex hooks.json")?;
+            println!("[dry-run] content:\n{}", serialized);
+        }
+        return Ok(true);
+    }
+
+    ensure_codex_snapshot_unchanged(path, Some(&snapshot))?;
+    let backup_path = codex_backup_path(path);
+    fs::copy(path, &backup_path)
+        .with_context(|| format!("Failed to backup to {}", backup_path.display()))?;
+    let serialized =
+        serde_json::to_string_pretty(&root).context("Failed to serialize Codex hooks.json")?;
+    atomic_write(path, &serialized)
+        .with_context(|| format!("Failed to write Codex hooks.json: {}", path.display()))?;
+    Ok(true)
+}
+
+fn run_codex_mode(global: bool, hook_only: bool, ctx: InitContext) -> Result<()> {
     let (agents_md_path, rtk_md_path) = if global {
         let codex_dir = resolve_codex_dir()?;
         (codex_dir.join(AGENTS_MD), codex_dir.join(RTK_MD))
@@ -2382,13 +2650,54 @@ fn run_codex_mode(global: bool, ctx: InitContext) -> Result<()> {
         (PathBuf::from(AGENTS_MD), PathBuf::from(RTK_MD))
     };
 
-    run_codex_mode_with_paths(agents_md_path, rtk_md_path, global, ctx)
+    let hooks_path = global.then(|| {
+        agents_md_path.parent().map_or_else(
+            || PathBuf::from(HOOKS_JSON),
+            |parent| parent.join(HOOKS_JSON),
+        )
+    });
+    if hook_only {
+        run_codex_mode_with_paths_and_options(
+            agents_md_path,
+            rtk_md_path,
+            hooks_path,
+            global,
+            true,
+            ctx,
+        )
+    } else {
+        run_codex_mode_with_paths(agents_md_path, rtk_md_path, global, ctx)
+    }
 }
 
 fn run_codex_mode_with_paths(
     agents_md_path: PathBuf,
     rtk_md_path: PathBuf,
     global: bool,
+    ctx: InitContext,
+) -> Result<()> {
+    let hooks_path = global.then(|| {
+        agents_md_path.parent().map_or_else(
+            || PathBuf::from(HOOKS_JSON),
+            |parent| parent.join(HOOKS_JSON),
+        )
+    });
+    run_codex_mode_with_paths_and_options(
+        agents_md_path,
+        rtk_md_path,
+        hooks_path,
+        global,
+        false,
+        ctx,
+    )
+}
+
+fn run_codex_mode_with_paths_and_options(
+    agents_md_path: PathBuf,
+    rtk_md_path: PathBuf,
+    hooks_path: Option<PathBuf>,
+    global: bool,
+    hook_only: bool,
     ctx: InitContext,
 ) -> Result<()> {
     let InitContext { dry_run, .. } = ctx;
@@ -2403,6 +2712,22 @@ fn run_codex_mode_with_paths(
         }
     }
 
+    let hook_changed = if let Some(path) = &hooks_path {
+        if !dry_run {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).with_context(|| {
+                    format!(
+                        "Failed to create Codex config directory: {}",
+                        parent.display()
+                    )
+                })?;
+            }
+        }
+        Some(patch_codex_hooks_json(path, ctx)?)
+    } else {
+        None
+    };
+
     // ISSUE #892: In global mode, use absolute path so @RTK.md resolves
     // from any CWD (worktrees, nested projects). Codex resolves @ references
     // relative to CWD, not the AGENTS.md file location.
@@ -2416,31 +2741,53 @@ fn run_codex_mode_with_paths(
         RTK_MD_REF.to_string()
     };
 
-    write_if_changed(&rtk_md_path, RTK_SLIM_CODEX, RTK_MD, ctx)?;
-    let added_ref = patch_agents_md(&agents_md_path, &rtk_md_ref, ctx)?;
+    let added_ref = if hook_only {
+        false
+    } else {
+        write_if_changed(&rtk_md_path, RTK_SLIM_CODEX, RTK_MD, ctx)?;
+        patch_agents_md(&agents_md_path, &rtk_md_ref, ctx)?
+    };
 
     if !dry_run {
-        println!("\nRTK configured for Codex CLI.\n");
-        println!("  RTK.md:    {}", rtk_md_path.display());
-        if added_ref {
-            println!("  AGENTS.md: {} reference added", rtk_md_ref);
+        if hook_only {
+            println!("\nRTK hook installed for Codex CLI.\n");
+            if let Some(path) = &hooks_path {
+                println!("  hooks.json: {}", path.display());
+            }
         } else {
-            println!("  AGENTS.md: {} reference already present", rtk_md_ref);
+            println!("\nRTK configured for Codex CLI.\n");
+            if let (Some(path), Some(changed)) = (&hooks_path, hook_changed) {
+                let state = if changed {
+                    "hook added"
+                } else {
+                    "hook already canonical"
+                };
+                println!("  hooks.json: {} ({state})", path.display());
+            }
+            println!("  RTK.md:    {}", rtk_md_path.display());
+            if added_ref {
+                println!("  AGENTS.md: {} reference added", rtk_md_ref);
+            } else {
+                println!("  AGENTS.md: {} reference already present", rtk_md_ref);
+            }
+        }
+        if codex_should_report_instructions_path(global, hook_only) {
+            println!(
+                "\n  Codex {} instructions path: {}",
+                if global { "global" } else { "project" },
+                agents_md_path.display()
+            );
         }
         if global {
-            println!(
-                "\n  Codex global instructions path: {}",
-                agents_md_path.display()
-            );
-        } else {
-            println!(
-                "\n  Codex project instructions path: {}",
-                agents_md_path.display()
-            );
+            println!("  Restart Codex CLI. If prompted, trust the `rtk hook codex` command.");
         }
     }
 
     Ok(())
+}
+
+fn codex_should_report_instructions_path(global: bool, hook_only: bool) -> bool {
+    !global || !hook_only
 }
 
 // --- upsert_rtk_block: idempotent RTK block management ---
@@ -4119,6 +4466,7 @@ fn show_claude_config() -> Result<()> {
 
 fn show_codex_config() -> Result<()> {
     let codex_dir = resolve_codex_dir()?;
+    let global_hooks_json = codex_dir.join(HOOKS_JSON);
     let global_agents_md = codex_dir.join(AGENTS_MD);
     let global_rtk_md = codex_dir.join(RTK_MD);
     let global_rtk_md_ref = codex_rtk_md_ref(&codex_dir);
@@ -4126,6 +4474,19 @@ fn show_codex_config() -> Result<()> {
     let local_rtk_md = PathBuf::from(RTK_MD);
 
     println!("rtk Configuration (Codex CLI):\n");
+
+    match read_codex_hooks_snapshot(&global_hooks_json) {
+        Ok((None, _)) => println!("[--] Global hooks.json: not found"),
+        Ok((Some(_), root)) => match codex_hook_already_present(&root) {
+            Ok(true) => println!(
+                "[ok] Global hooks.json: {} (timeout {}s)",
+                CODEX_HOOK_COMMAND, CODEX_HOOK_TIMEOUT
+            ),
+            Ok(false) => println!("[--] Global hooks.json: RTK hook not configured"),
+            Err(_) => println!("[warn] Global hooks.json: invalid hook structure"),
+        },
+        Err(error) => println!("[warn] Global hooks.json: {error}"),
+    }
 
     if global_rtk_md.exists() {
         println!("[ok] Global RTK.md: {}", global_rtk_md.display());
@@ -4167,8 +4528,14 @@ fn show_codex_config() -> Result<()> {
 
     println!("\nUsage:");
     println!("  rtk init --codex              # Configure local AGENTS.md + RTK.md");
-    println!("  rtk init -g --codex           # Configure $CODEX_HOME/AGENTS.md + $CODEX_HOME/RTK.md (or ~/.codex/)");
+    println!("  rtk init -g --codex           # Configure awareness + hooks.json");
+    println!("  rtk init -g --codex --hook-only  # Install only hooks.json");
+    println!("  rtk init --show --codex       # Show awareness and hook state");
     println!("  rtk init -g --codex --uninstall  # Remove global Codex RTK artifacts");
+    println!("\nGuidance:");
+    println!("  Restart Codex CLI after install or uninstall.");
+    println!("  If prompted, review and trust the `rtk hook codex` command.");
+    println!("  Unsupported, malformed, and already-prefixed commands pass through unchanged.");
 
     Ok(())
 }
@@ -5380,6 +5747,185 @@ mod tests {
             err.to_string(),
             "--codex cannot be combined with --no-patch"
         );
+    }
+
+    #[test]
+    fn test_codex_hook_entry_is_appended_with_timeout() {
+        let mut root = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [{
+                    "matcher": "Bash",
+                    "hooks": [{ "type": "command", "command": "security-hook" }]
+                }]
+            }
+        });
+
+        assert!(merge_codex_hook_entry(&mut root).unwrap());
+        let entries = root["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0]["hooks"][0]["command"], "security-hook");
+        assert_eq!(entries[1]["matcher"], "Bash");
+        assert_eq!(entries[1]["hooks"][0]["command"], CODEX_HOOK_COMMAND);
+        assert_eq!(entries[1]["hooks"][0]["timeout"], 5);
+    }
+
+    #[test]
+    fn test_codex_hook_merge_deduplicates_and_repositions_exact_entries() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join(HOOKS_JSON);
+        let original = serde_json::json!({
+            "version": 1,
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "Bash",
+                        "hooks": [{ "type": "command", "command": "safety-hook" }]
+                    },
+                    {
+                        "matcher": "Bash",
+                        "hooks": [
+                            { "type": "command", "command": CODEX_HOOK_COMMAND },
+                            { "type": "command", "command": "user-hook" }
+                        ]
+                    },
+                    {
+                        "matcher": "Bash",
+                        "hooks": [{ "type": "command", "command": CODEX_HOOK_COMMAND }]
+                    }
+                ],
+                "PostToolUse": [{ "matcher": "Edit", "hooks": [] }]
+            },
+            "custom": { "keep": true }
+        });
+        fs::write(&path, serde_json::to_vec(&original).unwrap()).unwrap();
+
+        assert!(patch_codex_hooks_json(&path, InitContext::default()).unwrap());
+        let first = fs::read(&path).unwrap();
+        let root: serde_json::Value = serde_json::from_slice(&first).unwrap();
+        assert_eq!(root["version"], 1);
+        assert_eq!(root["custom"]["keep"], true);
+        assert_eq!(root["hooks"]["PostToolUse"][0]["matcher"], "Edit");
+        let entries = root["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[1]["hooks"][0]["command"], "user-hook");
+        assert_eq!(entries[2]["hooks"][0]["command"], CODEX_HOOK_COMMAND);
+        assert_eq!(entries[2]["hooks"][0]["timeout"], CODEX_HOOK_TIMEOUT);
+        assert_eq!(
+            entries
+                .iter()
+                .flat_map(|entry| entry["hooks"].as_array().unwrap())
+                .filter(|hook| is_codex_hook(hook))
+                .count(),
+            1
+        );
+        assert!(!patch_codex_hooks_json(&path, InitContext::default()).unwrap());
+        assert_eq!(fs::read(&path).unwrap(), first);
+        assert_eq!(
+            fs::read(path.with_extension("json.bak")).unwrap(),
+            serde_json::to_vec(&original).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_codex_hook_uninstall_preserves_mixed_user_group() {
+        let mut root = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "Bash",
+                        "hooks": [
+                            { "type": "command", "command": "user-hook" },
+                            { "type": "command", "command": CODEX_HOOK_COMMAND }
+                        ]
+                    },
+                    {
+                        "matcher": "Bash",
+                        "hooks": [{ "type": "command", "command": CODEX_HOOK_COMMAND }]
+                    }
+                ],
+                "PostToolUse": [{ "matcher": "Edit", "hooks": [] }]
+            }
+        });
+
+        assert!(remove_codex_hook_entry(&mut root).unwrap());
+        assert_eq!(root["hooks"]["PreToolUse"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            root["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
+            "user-hook"
+        );
+        assert!(root["hooks"]["PostToolUse"].is_array());
+        assert!(!remove_codex_hook_entry(&mut root).unwrap());
+    }
+
+    #[test]
+    fn test_codex_hook_install_hook_only_writes_no_awareness() {
+        let temp = TempDir::new().unwrap();
+        let agents_md = temp.path().join(AGENTS_MD);
+        let rtk_md = temp.path().join(RTK_MD);
+        let hooks_json = temp.path().join(HOOKS_JSON);
+
+        run_codex_mode_with_paths_and_options(
+            agents_md.clone(),
+            rtk_md.clone(),
+            Some(hooks_json.clone()),
+            true,
+            true,
+            InitContext::default(),
+        )
+        .unwrap();
+
+        assert!(hooks_json.exists());
+        assert!(!agents_md.exists());
+        assert!(!rtk_md.exists());
+        let root: serde_json::Value =
+            serde_json::from_slice(&fs::read(hooks_json).unwrap()).unwrap();
+        assert!(codex_hook_already_present(&root).unwrap());
+    }
+
+    #[test]
+    fn test_codex_hook_only_skips_instructions_path_reporting() {
+        assert!(!codex_should_report_instructions_path(true, true));
+        assert!(codex_should_report_instructions_path(true, false));
+        assert!(codex_should_report_instructions_path(false, false));
+    }
+
+    #[test]
+    fn test_codex_hook_malformed_and_dry_run_leave_file_unchanged() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join(HOOKS_JSON);
+        let malformed = b"{not json";
+        fs::write(&path, malformed).unwrap();
+        let error = patch_codex_hooks_json(&path, InitContext::default()).unwrap_err();
+        assert!(error.to_string().contains("Failed to parse"));
+        assert_eq!(fs::read(&path).unwrap(), malformed);
+
+        let original = br#"{"hooks":{"PreToolUse":[]},"keep":true}"#;
+        fs::write(&path, original).unwrap();
+        assert!(patch_codex_hooks_json(
+            &path,
+            InitContext {
+                dry_run: true,
+                ..Default::default()
+            }
+        )
+        .unwrap());
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert!(!codex_backup_path(&path).exists());
+    }
+
+    #[test]
+    fn test_codex_hook_snapshot_guard_rejects_changed_file() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join(HOOKS_JSON);
+        fs::write(&path, "before").unwrap();
+        let snapshot = fs::read(&path).unwrap();
+        fs::write(&path, "after").unwrap();
+
+        let error = ensure_codex_snapshot_unchanged(&path, Some(&snapshot)).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("changed while it was being updated"));
+        assert_eq!(fs::read_to_string(&path).unwrap(), "after");
     }
 
     #[test]
