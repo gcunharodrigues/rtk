@@ -66,8 +66,9 @@ reproducible measurements.
 | Symlink-safe backup/write (`e47d588`) | `cargo test symlink -- --nocapture` — the three new regressions all returned `Ok(true)` instead of rejecting symlink targets. | `cargo test symlink -- --nocapture` passed 7 tests; the fixed-candidate check below passed 32 Codex, 394 registry, 118 hook, and 203 init tests; Clippy, format, and diff checks passed. |
 | Codex 0.151.0 wire marker (`2ec0f04`) | `cargo test test_codex_rewrite_emits_compatible_pretooluse_envelope -- --nocapture` — exit 101: the response returned `updatedInput` without the required `permissionDecision: "allow"` marker. | `cargo test codex -- --nocapture` passed 33 Codex tests, including the exact compatible-envelope regression and the 87/87 registry corpus; rewrites emit `allow` and omit `permissionDecisionReason`. |
 
-`git diff --check` was the recorded diff check. The final full-suite task remains
-unchecked in [tasks.md](tasks.md); no final-suite result is claimed here.
+`git diff --check` was the recorded diff check. At this historical checkpoint,
+the final full-suite task remained unchecked in [tasks.md](tasks.md); the later
+post-remediation full-suite gate is recorded below.
 
 ## Byte-savings corpus
 
@@ -161,10 +162,26 @@ p95 or maximum target is claimed.
 - `/usr/bin/time -p` reported `real 21.43`. The slowest test target was
   `copilot_selfheal_test` at 2.33 seconds.
 - This historical section is evidence-only documentation for the prior
-  `e47d588c9e4dfa20df32d08fe54676d684fa6c59` candidate. The current
-  compatibility remediation is `2ec0f044763cf9314fe96eafe6e25289c84cfaf0` and
-  is intentionally covered by the focused gates recorded above, without
-  claiming a new full-suite run.
+  `e47d588c9e4dfa20df32d08fe54676d684fa6c59` candidate. At that checkpoint,
+  the current compatibility remediation `2ec0f044763cf9314fe96eafe6e25289c84cfaf0`
+  was intentionally covered by focused gates only; the later post-remediation
+  review and full-suite gate are recorded below.
+
+## Post-remediation Independent Review and Final Gate
+
+This section is evidence-only and records validation after the Codex 0.151.0
+wire-compatibility remediation. The production implementation remains exactly
+`2ec0f044763cf9314fe96eafe6e25289c84cfaf0`; the closed review SHA
+`60586f2a8f910fb51725cc52f6a1ee768b4dceba` contains documentation only.
+
+- Independent review: PASS on closed SHA `60586f2a8f910fb51725cc52f6a1ee768b4dceba`.
+- Exact gate: `/usr/bin/time -p sh -c 'cargo fmt --all --check && cargo clippy --all-targets -- -D warnings && cargo test --all'`.
+- Result: PASS — 2,955 unit tests and 83 integration tests passed (3,038 total),
+  8 ignored, 0 failed.
+- `/usr/bin/time -p` reported `real 6.99`; the slowest target was
+  `copilot_selfheal_test` at 2.57 seconds.
+- No production source or behavior changed in this evidence-only post-gate
+  record.
 
 ## Documentation Impact Classification
 

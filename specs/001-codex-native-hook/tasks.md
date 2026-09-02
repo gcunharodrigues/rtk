@@ -39,7 +39,7 @@
 
 ## Dependencies
 
-`T001 → T002 → T003–T005 → T006–T008 → T009–T010 → T011–T014 → T030–T031`.
+`T001 → T002 → T003–T005 → T006–T008 → T009–T010 → T011–T014 → T030–T031 → T032–T033`.
 Production tasks are serial because they overlap the CLI and hook lifecycle.
 
 ## Execution Waves
@@ -50,6 +50,7 @@ Production tasks are serial because they overlap the CLI and hook lifecycle.
 - Wave 3: T009–T010 (acceptance evidence; depends on both production commits).
 - Wave 4: T011–T014 (closed-candidate checks; strictly serial).
 - Wave 5: T030–T031 (Codex wire compatibility remediation; strictly serial).
+- Wave 6: T032–T033 (post-remediation review and final gate; evidence-only).
 
 ## Strategy
 
@@ -103,6 +104,12 @@ constitution requires observed RGR, not a broken commit.
   permission-preserving rewrite, fail-open cases, and 87/87 registry corpus
   passed in 33 Codex tests, with the marker present and
   `permissionDecisionReason` absent.
+- Post-remediation review and gate are evidence-only: independent review PASS
+  closed on `60586f2a8f910fb51725cc52f6a1ee768b4dceba`; the exact format,
+  Clippy, and full-suite gate passed with 2,955 unit + 83 integration = 3,038
+  tests, 8 ignored, 0 failed, `real 6.99s`, and
+  `copilot_selfheal_test` slowest at 2.57s. Production remains unchanged at
+  `2ec0f044763cf9314fe96eafe6e25289c84cfaf0`.
 - Evidence paths `specs/001-codex-native-hook/{acceptance.md,tasks.md}` bind
   to production SHA `2ec0f044763cf9314fe96eafe6e25289c84cfaf0`.
 
@@ -143,3 +150,8 @@ constitution requires observed RGR, not a broken commit.
 
 - [x] T030 Add a failing compatible-envelope regression and require Codex's `permissionDecision: "allow"` wire marker with `updatedInput`, while retaining no `permissionDecisionReason` and native approval ownership
 - [x] T031 Rebind the fixed-SHA verifier, corpus, latency, acceptance contract, and operator docs to production `2ec0f044763cf9314fe96eafe6e25289c84cfaf0`; run focused tests, format, Clippy, and diff checks
+
+## Phase 13: Post-remediation review and final gate
+
+- [x] T032 Obtain independent read-only review of the Codex 0.151.0 protocol fix; PASS on closed SHA `60586f2a8f910fb51725cc52f6a1ee768b4dceba`
+- [x] T033 Run the post-remediation gate `/usr/bin/time -p sh -c 'cargo fmt --all --check && cargo clippy --all-targets -- -D warnings && cargo test --all'` — PASS: 2,955 unit + 83 integration = 3,038; 8 ignored, 0 failed; `real 6.99s`; slowest target `copilot_selfheal_test` at 2.57s; production remained `2ec0f044763cf9314fe96eafe6e25289c84cfaf0`
