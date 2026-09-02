@@ -11,29 +11,29 @@
 
 **Independent test**: supported Bash commands rewrite once; every passthrough class emits nothing and succeeds.
 
-- [ ] T003 [US1] Add failing Codex CLI and payload contract tests in `src/main.rs` and `src/hooks/hook_cmd.rs`
-- [ ] T004 [US1] Implement minimal shared-decision Codex processor in `src/hooks/hook_cmd.rs` and dispatch in `src/main.rs`
-- [ ] T005 [US1] Run focused hook tests and commit the independently working processor
+- [x] T003 [US1] Add failing Codex CLI and payload contract tests in `src/main.rs` and `src/hooks/hook_cmd.rs`
+- [x] T004 [US1] Implement minimal shared-decision Codex processor in `src/hooks/hook_cmd.rs` and dispatch in `src/main.rs`
+- [x] T005 [US1] Run focused hook tests and commit the independently working processor
 
 ## Phase 3: User Story 2 — Safe configuration (P2)
 
 **Independent test**: temporary config survives install twice/show/uninstall with unrelated hooks unchanged.
 
-- [ ] T006 [US2] Add failing lifecycle tests in `src/hooks/init.rs`
-- [ ] T007 [US2] Implement global and hook-only install, show, and narrow uninstall in `src/hooks/init.rs` and `src/hooks/constants.rs`
-- [ ] T008 [US2] Update `hooks/codex/README.md`, run focused lifecycle tests, and commit
+- [x] T006 [US2] Add failing lifecycle tests in `src/hooks/init.rs`
+- [x] T007 [US2] Implement global and hook-only install, show, and narrow uninstall in `src/hooks/init.rs` and `src/hooks/constants.rs`
+- [x] T008 [US2] Update `hooks/codex/README.md`, run focused lifecycle tests, and commit
 
 ## Phase 4: User Story 3 — Measured savings (P3)
 
 **Independent test**: disposable corpus meets semantic, median reduction, and latency gates.
 
-- [ ] T009 [US3] Build the local binary and execute `quickstart.md` against a disposable Codex home
-- [ ] T010 [US3] Record corpus inputs, byte results, semantic checks, and hook latency in `acceptance.md`
+- [x] T009 [US3] Build the local binary and execute `quickstart.md` against a disposable Codex home
+- [x] T010 [US3] Record corpus inputs, byte results, semantic checks, and hook latency in `acceptance.md`
 
 ## Phase 5: Convergence and review
 
 - [x] T011 Run specification analysis and append any discovered work
-- [ ] T012 Run Documentation Impact Classification through `okf-maintain`
+- [x] T012 Run Documentation Impact Classification through `okf-maintain`
 - [ ] T013 Obtain independent read-only code review of the fixed candidate
 - [ ] T014 Run the unchanged-candidate gate: `cargo fmt --all --check`, `cargo clippy --all-targets`, `cargo test --all`
 
@@ -54,3 +54,21 @@ Production tasks are serial because they overlap the CLI and hook lifecycle.
 
 Ship P1 first, validate it independently, then add reversible configuration,
 then accept only with measured savings and semantic evidence.
+
+## Execution Evidence
+
+- `6e2e157 feat(hook): add native Codex command rewrite` — RED: missing
+  `run_codex_inner`/`HookCommands::Codex`; GREEN: 13 Codex tests, 115 hook
+  tests, Clippy, format, and 2,933 repository tests passed.
+- `cb3a5ca feat(init): install native Codex hook` — RED: missing
+  `CODEX_HOOK_COMMAND`/merge; GREEN: 9 lifecycle tests, 193 init tests,
+  Clippy, format, and disposable CLI smoke passed.
+- `e18d41c perf(registry): reduce hook startup latency` — RED: 16.247 ms
+  release median; GREEN: 7.275 ms median, 8.047 ms p95, 393 registry tests,
+  115 hook tests, Clippy, and format passed.
+- Evidence paths `specs/001-codex-native-hook/{acceptance.md,tasks.md}` bind
+  to production SHA `e18d41c02c3cb7d02007a23ff2ac023444930df4`.
+
+## Phase 6: Convergence
+
+- [x] T015 Optimize lazy registry matching and retain complete rewrite behavior so release hook startup meets the below-10-ms target per SC-005 (partial)
