@@ -1,9 +1,9 @@
 //! Matches shell commands against known RTK rewrite rules to decide how to handle them.
 
 use crate::core::utils::composer_bin_dirs;
-use regex::{Regex, RegexSet};
+use regex::Regex;
 use std::path::Path;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 
 use super::lexer::{
     shell_split, split_on_operators, tokenize, tokenize_with_newlines, ParsedToken, PipeKind,
@@ -51,15 +51,8 @@ pub fn category_avg_tokens(category: &str, subcmd: &str) -> usize {
     }
 }
 
-static REGEX_SET: LazyLock<RegexSet> = LazyLock::new(|| {
-    RegexSet::new(RULES.iter().map(|r| r.pattern)).expect("invalid regex patterns")
-});
-static COMPILED: LazyLock<Vec<Regex>> = LazyLock::new(|| {
-    RULES
-        .iter()
-        .map(|r| Regex::new(r.pattern).expect("invalid regex"))
-        .collect()
-});
+static COMPILED: LazyLock<Vec<OnceLock<Regex>>> =
+    LazyLock::new(|| (0..RULES.len()).map(|_| OnceLock::new()).collect());
 static ENV_PREFIX: LazyLock<Regex> = LazyLock::new(|| {
     let double_quoted = r#""(?:[^"\\]|\\.)*""#;
     let single_quoted = r#"'(?:[^'\\]|\\.)*'"#;
@@ -161,13 +154,29 @@ pub fn classify_command(cmd: &str) -> Classification {
         }
     }
 
-    // Fast check with RegexSet — take the last (most specific) match
-    let matches: Vec<usize> = REGEX_SET.matches(cmd_clean).into_iter().collect();
-    if let Some(&idx) = matches.last() {
+    // Compile and check only rules whose rewrite prefix can start this command.
+    // RULES order still determines the last (most specific) match.
+    let mut matched_idx = None;
+    for (idx, rule) in RULES.iter().enumerate() {
+        if !rule_is_candidate(cmd_clean, rule) {
+            continue;
+        }
+        if COMPILED[idx]
+            .get_or_init(|| Regex::new(rule.pattern).expect("invalid regex"))
+            .is_match(cmd_clean)
+        {
+            matched_idx = Some(idx);
+        }
+    }
+
+    if let Some(idx) = matched_idx {
         let rule = &RULES[idx];
 
         // Extract subcommand for savings override and status detection
-        let (savings, status) = if let Some(caps) = COMPILED[idx].captures(cmd_clean) {
+        let (savings, status) = if let Some(caps) = COMPILED[idx]
+            .get_or_init(|| Regex::new(rule.pattern).expect("invalid regex"))
+            .captures(cmd_clean)
+        {
             if let Some(sub) = caps.get(1) {
                 let subcmd = sub.as_str();
                 // Check if this subcommand has a special status
@@ -211,6 +220,18 @@ pub fn classify_command(cmd: &str) -> Classification {
             }
         }
     }
+}
+
+fn rule_is_candidate(cmd: &str, rule: &RtkRule) -> bool {
+    rule.rewrite_prefixes
+        .iter()
+        .any(|prefix| cmd.starts_with(prefix))
+        // These patterns accept interpreter/tool spellings not enumerable in
+        // rewrite_prefixes (e.g. python3.12 and php vendor/bin/phpunit).
+        || (cmd.split(char::is_whitespace).next().is_some_and(|word| {
+            (word.starts_with("python") && rule.pattern.starts_with("^(python"))
+                || (word == "php" && rule.pattern.contains("php\\s+"))
+        }))
 }
 
 /// Extract the base command (first word, or first two if it looks like a subcommand pattern).
@@ -6011,5 +6032,40 @@ mod tests {
             normalize_php_tool_command_with_dirs("./tools/bin/pest", &dirs),
             "pest"
         );
+    }
+
+    #[test]
+    fn test_candidate_prefilter_preserves_last_match() {
+        for command in [
+            "git status",
+            "npx tsc --noEmit",
+            "python3.12 -m pytest tests/",
+            "php vendor/bin/phpunit tests/",
+            "du-foo",
+            "prettierfoo",
+        ] {
+            let expected = RULES
+                .iter()
+                .enumerate()
+                .filter(|(_, rule)| Regex::new(rule.pattern).unwrap().is_match(command))
+                .map(|(idx, _)| idx)
+                .next_back();
+            let candidates: Vec<_> = RULES
+                .iter()
+                .enumerate()
+                .filter(|(_, rule)| rule_is_candidate(command, rule))
+                .collect();
+            let actual = candidates
+                .iter()
+                .filter(|(_, rule)| Regex::new(rule.pattern).unwrap().is_match(command))
+                .map(|(idx, _)| *idx)
+                .next_back();
+
+            assert_eq!(actual, expected, "candidate mismatch for {command}");
+            assert!(
+                candidates.len() < RULES.len(),
+                "prefilter is not narrow for {command}"
+            );
+        }
     }
 }
