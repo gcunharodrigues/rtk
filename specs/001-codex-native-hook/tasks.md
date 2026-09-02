@@ -84,8 +84,11 @@ constitution requires observed RGR, not a broken commit.
 - `c89508a fix(registry): rewrite supported alternate forms` — GREEN: shared
   registry and Codex payload alternate-form tests passed; final focused check
   passed 24 Codex, 394 registry, and 118 hook tests in 6.59 seconds.
+- `02dc193 fix(codex): preserve hook group metadata` — GREEN: metadata, empty
+  containers, relative order, and exact owned-container removal tests passed;
+  fixed-candidate check passed 28 Codex, 394 registry, 118 hook, and 199 init tests.
 - Evidence paths `specs/001-codex-native-hook/{acceptance.md,tasks.md}` bind
-  to production SHA `c89508aba6676ecd0f034895dea70f385110adad`.
+  to production SHA `02dc193366da87238c331906a05b5b8e54291dcc`.
 
 ## Phase 6: Convergence
 
@@ -113,3 +116,4 @@ constitution requires observed RGR, not a broken commit.
 - [x] T024 Bind the verifier to an offline build of the production SHA and reject false diff totals or irrelevant recovery files
 - [x] T025 Clarify `hooks.json` preservation as JSON values and unrelated hook order, with canonical reserialization allowed and prior bytes retained by backup
 - [x] T026 Record the symlinked-corpus verifier safety result and untouched external sentinel
+- [x] T027 Rebind corpus, latency, and focused evidence to the metadata-preserving production SHA

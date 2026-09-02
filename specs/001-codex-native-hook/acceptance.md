@@ -1,6 +1,6 @@
 # Acceptance Evidence
 
-**Production candidate**: `c89508aba6676ecd0f034895dea70f385110adad`
+**Production candidate**: `02dc193366da87238c331906a05b5b8e54291dcc`
 
 ## Hook and lifecycle
 
@@ -48,7 +48,8 @@ reproducible measurements.
 | Lifecycle (`cb3a5ca`) | `cargo test codex_hook -- --nocapture` — missing `CODEX_HOOK_COMMAND` / merge. | `cargo test codex_hook -- --nocapture` — 9 lifecycle tests; `cargo test hooks::init::tests -- --nocapture` — 193 init tests. |
 | Latency refactor (`e18d41c`) | The latency runner below, built from `cb3a5ca8c96d22d6cbb6bf65b4aa51243ff763e5`: 16.247 ms median. | The same runner, built from `e18d41c02c3cb7d02007a23ff2ac023444930df4`: 7.275 ms median and 8.047 ms p95; `cargo test test_candidate_prefilter_preserves_last_match -- --nocapture`. |
 | Permission and status (`9838e31`) | Claude deny suppressed Codex rewrite; malformed hook reported healthy. | `cargo test test_codex_rewrite_ignores_claude_deny_rules -- --nocapture`; `cargo test test_codex_hook_status_requires_one_canonical_final_entry -- --nocapture`. Recorded fixed-candidate evidence: 23 Codex tests, Clippy, format, and diff checks passed. |
-| Alternate forms (`c89508a`) | `cargo test test_rewrite_supported_alternate_forms -- --nocapture`; `cargo test test_codex_rewrites_supported_alternate_forms -- --nocapture` — expected alternate forms did not rewrite. | Both tests passed. The final focused check below passed 24 Codex, 394 registry, and 118 hook tests. |
+| Alternate forms (`c89508a`) | `cargo test test_rewrite_supported_alternate_forms -- --nocapture`; `cargo test test_codex_rewrites_supported_alternate_forms -- --nocapture` — expected alternate forms did not rewrite. | Both tests passed; that candidate's focused check passed 24 Codex, 394 registry, and 118 hook tests. |
+| Group preservation (`02dc193`) | Metadata-only and pre-existing-empty-container tests failed. | 14 focused lifecycle tests passed; the fixed-candidate check below passed 28 Codex, 394 registry, 118 hook, and 199 init tests. |
 
 `git diff --check` was the recorded diff check. The final full-suite task remains
 unchecked in [tasks.md](tasks.md); no final-suite result is claimed here.
@@ -57,7 +58,7 @@ unchecked in [tasks.md](tasks.md); no final-suite result is claimed here.
 
 **Machine**: `Guilhermes-Air`; `macOS-26.6.2-arm64-arm-64bit-Mach-O`.
 
-Build `c89508aba6676ecd0f034895dea70f385110adad` with `cargo build --release`.
+Build `02dc193366da87238c331906a05b5b8e54291dcc` with `cargo build --release`.
 Each command ran with `subprocess.run(..., capture_output=True)`; bytes are
 `stdout + stderr`, and the exit status is retained, including expected failure.
 The committed fixture is `fixtures/failing-rust/`. The method cleans distinct
@@ -65,10 +66,10 @@ raw and filtered `CARGO_TARGET_DIR` paths before measuring.
 
 | Case | Raw command | Filtered command | Raw / filtered bytes | Reduction | Status |
 |---|---|---|---:|---:|---:|
-| Git log | `git log --stat --oneline 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | `./target/release/rtk git log --stat --oneline 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | 4,108 / 4,108 | 0.0% | 0 |
-| Git diff | `git diff 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | `./target/release/rtk git diff 9cdf66f805adc7a710a4f517a2829fae96c49525..c89508aba6676ecd0f034895dea70f385110adad` | 95,006 / 34,054 | 64.2% | 0 |
-| File listing | `find src docs hooks specs -type f` | isolated production build: `rtk find src docs hooks specs -type f` | 7,050 / 1,249 | 82.3% | 0 |
-| Text search | `rg -n test src` | isolated production build: `rtk rg -n test src` | 600,016 / 12,864 | 97.9% | 0 |
+| Git log | fixed-range `git log --stat --oneline` | isolated production build: `rtk git log --stat --oneline` | 5,982 / 5,982 | 0.0% | 0 |
+| Git diff | fixed-range `git diff` | isolated production build: `rtk git diff` | 129,638 / 35,726 | 72.4% | 0 |
+| File listing | `find src docs hooks specs -type f` | isolated production build: `rtk find src docs hooks specs -type f` | 7,160 / 1,249 | 82.6% | 0 |
+| Text search | `rg -n test src` | isolated production build: `rtk rg -n test src` | 600,531 / 12,864 | 97.9% | 0 |
 | Failing Rust test | isolated fixture `cargo test --verbose` | isolated production build: `rtk cargo test --verbose` | 2,315 / 503 | 78.3% | 101 |
 
 The executable comparator is:
@@ -77,7 +78,7 @@ The executable comparator is:
 python3 specs/001-codex-native-hook/verify_acceptance.py
 ```
 
-It reconstructs `c89508a` with `git archive`, builds that tree offline, and runs
+It reconstructs `02dc193` with `git archive`, builds that tree offline, and runs
 the corpus there. It returned `ok: true` and **78.3% median reduction**. Its
 case-specific assertions proved: equal commit count and log output; every
 changed diff path plus exact file/insertion/deletion totals; exact file and
@@ -117,19 +118,19 @@ samples = sorted(run() for _ in range(200))
 print(statistics.median(samples), samples[189], samples[-1])
 ```
 
-For `c89508aba6676ecd0f034895dea70f385110adad`, the recorded median was
-**8.770 ms**, p95 **9.840 ms**, maximum **10.598 ms**. The acceptance target
+For `02dc193366da87238c331906a05b5b8e54291dcc`, the recorded median was
+**8.283 ms**, p95 **9.879 ms**, maximum **11.049 ms**. The acceptance target
 is median < 10 ms; no p95 target is claimed.
 
 ## Fixed-candidate Focused Check
 
-- Candidate: `c89508aba6676ecd0f034895dea70f385110adad`.
+- Candidate: `02dc193366da87238c331906a05b5b8e54291dcc`.
 - Scope: `src/main.rs`, `src/hooks/{hook_cmd,init,constants,permissions}.rs`,
   `src/discover/{registry,rules}.rs`, and `hooks/codex/README.md`.
 - Consumers: Codex `PreToolUse`, CLI parsing, init/show/uninstall, shared registry.
-- Command: `cargo test codex && cargo test discover::registry::tests && cargo test hooks::hook_cmd::tests`.
-- Result: PASS — 24 Codex, 394 registry, and 118 hook tests.
-- Elapsed: 6.59 seconds; slowest step: registry tests at 0.25 seconds.
+- Command: `cargo test codex && cargo test discover::registry::tests && cargo test hooks::hook_cmd::tests && cargo test hooks::init::tests`.
+- Result: PASS — 28 Codex, 394 registry, 118 hook, and 199 init tests.
+- Elapsed: 1.28 seconds.
 - Focused target: 60 seconds; met.
 
 ## Documentation Impact Classification
