@@ -187,7 +187,10 @@ rtk init --codex                 # project awareness only
 
 Global installation adds a `PreToolUse` hook with matcher `Bash` that runs
 exactly `rtk hook codex`. It also writes RTK awareness unless `--hook-only` is
-used. RTK returns only the rewritten command; Codex owns approval. Local
+used. Rewrites include `permissionDecision: "allow"` because Codex 0.151.0
+requires the marker with `updatedInput`; it does not bypass approval or
+sandbox decisions, and RTK never emits `permissionDecisionReason`. Codex owns
+approval. Local
 `rtk init --codex` remains awareness-only and does not install a hook.
 
 ### Kilo Code
