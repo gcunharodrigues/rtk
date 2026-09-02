@@ -1,6 +1,6 @@
 # Acceptance Evidence
 
-**Production candidate**: `dcd395d5ab70c42a186b161243c6bb6434430aab`
+**Production candidate**: `e47d588c9e4dfa20df32d08fe54676d684fa6c59`
 
 The only changes after this production SHA are the verifier rebind and this
 feature evidence. The verifier rebuilds the production SHA instead of trusting
@@ -24,6 +24,9 @@ feature evidence. The verifier rebuilds the production SHA instead of trusting
   replacing `hooks.json`; replacement after that check is atomic. `hooks.json`
   has no cooperative lock or compare-and-swap, so an uncooperative writer after
   the check is outside this protection.
+- Codex install/uninstall reject symlinked `hooks.json.bak` destinations before
+  backup, and dangling `hooks.json` symlinks fail without replacing the link;
+  valid configuration symlinks remain supported.
 - The real Codex home was never used.
 - A synthetic Claude `Bash(git status)` deny did not suppress the Codex rewrite.
   `--show --codex` reports healthy only for one canonical final entry; malformed,
@@ -55,6 +58,7 @@ reproducible measurements.
 | Alternate forms (`c89508a`) | `cargo test test_rewrite_supported_alternate_forms -- --nocapture`; `cargo test test_codex_rewrites_supported_alternate_forms -- --nocapture` — expected alternate forms did not rewrite. | Both tests passed; that candidate's focused check passed 24 Codex, 394 registry, and 118 hook tests. |
 | Group preservation (`02dc193`) | Metadata-only and pre-existing-empty-container tests failed. | 14 focused lifecycle tests passed; the fixed-candidate check below passed 28 Codex, 394 registry, 118 hook, and 199 init tests. |
 | Empty-container round trip (`dcd395d`) | Install followed by uninstall removed a pre-existing empty `PreToolUse` array. | The canonical test and a dedicated install/uninstall round-trip test passed; the fixed-candidate check below passed 29 Codex, 394 registry, 118 hook, and 200 init tests. |
+| Symlink-safe backup/write (`e47d588`) | `cargo test symlink -- --nocapture` — the three new regressions all returned `Ok(true)` instead of rejecting symlink targets. | `cargo test symlink -- --nocapture` passed 7 tests; the fixed-candidate check below passed 32 Codex, 394 registry, 118 hook, and 203 init tests; Clippy, format, and diff checks passed. |
 
 `git diff --check` was the recorded diff check. The final full-suite task remains
 unchecked in [tasks.md](tasks.md); no final-suite result is claimed here.
@@ -63,7 +67,7 @@ unchecked in [tasks.md](tasks.md); no final-suite result is claimed here.
 
 **Machine**: `Guilhermes-Air`; `macOS-26.6.2-arm64-arm-64bit-Mach-O`.
 
-Build `dcd395d5ab70c42a186b161243c6bb6434430aab` with `cargo build --release --offline`.
+Build `e47d588c9e4dfa20df32d08fe54676d684fa6c59` with `cargo build --release --offline`.
 Each command ran with `subprocess.run(..., capture_output=True)`; bytes are
 `stdout + stderr`, and the exit status is retained, including expected failure.
 The committed fixture is `fixtures/failing-rust/`. The method cleans distinct
@@ -71,10 +75,10 @@ raw and filtered `CARGO_TARGET_DIR` paths before measuring.
 
 | Case | Raw command | Filtered command | Raw / filtered bytes | Reduction | Status |
 |---|---|---|---:|---:|---:|
-| Git log | fixed-range `git log --stat --oneline` | isolated production build: `rtk git log --stat --oneline` | 6,544 / 6,544 | 0.0% | 0 |
-| Git diff | fixed-range `git diff` | isolated production build: `rtk git diff` | 131,417 / 35,666 | 72.9% | 0 |
+| Git log | fixed-range `git log --stat --oneline` | isolated production build: `rtk git log --stat --oneline` | 7,138 / 7,138 | 0.0% | 0 |
+| Git diff | fixed-range `git diff` | isolated production build: `rtk git diff` | 137,646 / 35,900 | 73.9% | 0 |
 | File listing | `find src docs hooks specs -type f` | isolated production build: `rtk find src docs hooks specs -type f` | 7,160 / 1,249 | 82.6% | 0 |
-| Text search | `rg -n test src` | isolated production build: `rtk rg -n test src` | 600,681 / 12,864 | 97.9% | 0 |
+| Text search | `rg -n test src` | isolated production build: `rtk rg -n test src` | 601,103 / 12,864 | 97.9% | 0 |
 | Failing Rust test | isolated fixture `cargo test --verbose` | isolated production build: `rtk cargo test --verbose` | 2,315 / 503 | 78.3% | 101 |
 
 The executable comparator is:
@@ -83,7 +87,7 @@ The executable comparator is:
 python3 specs/001-codex-native-hook/verify_acceptance.py
 ```
 
-It reconstructs `dcd395d` with `git archive`, builds that tree offline, and runs
+It reconstructs `e47d588` with `git archive`, builds that tree offline, and runs
 the corpus there. It returned `ok: true` and **78.3% median reduction**. Its
 case-specific assertions proved: equal commit count and log output; every
 changed diff path plus exact file/insertion/deletion totals; exact file and
@@ -123,21 +127,21 @@ samples = sorted(run() for _ in range(200))
 print(statistics.median(samples), samples[189], samples[-1])
 ```
 
-For `dcd395d5ab70c42a186b161243c6bb6434430aab`, the recorded median was
-**8.097 ms**, p95 **9.460 ms**, maximum **95.471 ms**. The timing data does not
+For `e47d588c9e4dfa20df32d08fe54676d684fa6c59`, the recorded median was
+**6.887 ms**, p95 **7.576 ms**, maximum **8.205 ms**. The timing data does not
 establish the cause of the maximum. The acceptance target is median < 10 ms; no
 p95 or maximum target is claimed.
 
 ## Fixed-candidate Focused Check
 
-- Candidate: `dcd395d5ab70c42a186b161243c6bb6434430aab`.
+- Candidate: `e47d588c9e4dfa20df32d08fe54676d684fa6c59`.
 - Scope: `src/main.rs`, `src/hooks/{hook_cmd,init,constants,permissions}.rs`,
   `src/discover/{registry,rules}.rs`, and `hooks/codex/README.md`.
 - Consumers: Codex `PreToolUse`, CLI parsing, init/show/uninstall, shared registry.
 - Command: `cargo test codex && cargo test discover::registry::tests && cargo test hooks::hook_cmd::tests && cargo test hooks::init::tests`.
-- Result: PASS — 29 Codex, 394 registry, 118 hook, and 200 init tests.
-- Individual elapsed: 0.350, 0.458, 0.240, and 0.222 seconds respectively;
-  the slowest focused step was the registry suite at 0.458 seconds.
+- Result: PASS — 32 Codex, 394 registry, 118 hook, and 203 init tests.
+- Individual test execution elapsed: 0.09, 0.34, 0.09, and 0.06 seconds respectively;
+  the slowest focused step was the registry suite at 0.34 seconds.
 - Focused target: 60 seconds; met.
 
 ## Documentation Impact Classification

@@ -91,8 +91,12 @@ constitution requires observed RGR, not a broken commit.
   empty `PreToolUse` survives install/uninstall; fixed-candidate check passed 29
   Codex, 394 registry, 118 hook, and 200 init tests. The slowest focused step was
   the registry suite at 0.458 seconds.
+- `e47d588 fix(src/hooks/init.rs): reject unsafe Codex symlink targets` — RED:
+  three symlink regressions returned `Ok(true)` instead of rejecting; GREEN:
+  seven symlink, 32 Codex, 394 registry, 118 hook, and 203 init tests passed,
+  with format, Clippy, diff, and fixed-SHA verifier checks passing.
 - Evidence paths `specs/001-codex-native-hook/{acceptance.md,tasks.md}` bind
-  to production SHA `dcd395d5ab70c42a186b161243c6bb6434430aab`.
+  to production SHA `e47d588c9e4dfa20df32d08fe54676d684fa6c59`.
 
 ## Phase 6: Convergence
 
@@ -122,3 +126,7 @@ constitution requires observed RGR, not a broken commit.
 - [x] T026 Record the symlinked-corpus verifier safety result and untouched external sentinel
 - [x] T027 Rebind corpus, latency, and focused evidence to the metadata-preserving production SHA
 - [x] T028 Preserve a pre-existing empty `PreToolUse` container across install/uninstall and rebind evidence to that production SHA
+
+## Phase 11: Symlink safety remediation
+
+- [x] T029 Reject Codex backup symlink destinations and dangling `hooks.json` symlinks without altering configuration, sentinel, or rollback behavior; rebind evidence to the production SHA
